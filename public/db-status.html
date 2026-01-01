@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Database Status Check</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            padding: 20px;
+        }
+        .container {
+            max-width: 600px;
+            background: rgba(30, 41, 59, 0.8);
+            padding: 40px;
+            border-radius: 20px;
+            border: 2px solid #334155;
+        }
+        h1 { color: #3b82f6; margin-bottom: 20px; font-size: 28px; }
+        .status {
+            padding: 15px;
+            border-radius: 10px;
+            margin: 15px 0;
+            font-weight: 600;
+        }
+        .checking { background: #1e40af; }
+        .success { background: #15803d; }
+        .error { background: #991b1b; }
+        button {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 700;
+            cursor: pointer;
+            margin-top: 20px;
+            width: 100%;
+        }
+        button:hover { background: #2563eb; }
+        .info { color: #94a3b8; margin-top: 15px; line-height: 1.6; }
+        .spinner {
+            border: 3px solid #334155;
+            border-top: 3px solid #3b82f6;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            display: inline-block;
+            margin-right: 10px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Database Connection Status</h1>
+        <div id="status" class="status checking">
+            <div class="spinner"></div>
+            <span>Checking database connection...</span>
+        </div>
+        <div id="info" class="info"></div>
+        <button id="retryBtn" onclick="checkDatabase()" style="display:none;">Retry Connection</button>
+        <button onclick="window.location.href='/'" style="margin-top:10px;">Go to App</button>
+    </div>
+
+    <script>
+        const SUPABASE_URL = 'https://fkypxitgnfqbfplxokve.supabase.co';
+        const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZreXB4aXRnbmZxYmZwbHhva3ZlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA2MjE0ODksImV4cCI6MjA3NjE5NzQ4OX0.Swk4AqJrRBNnEIdSGS3QjfU-okNKN2LGSL43Ha1h4Cc';
+
+        async function checkDatabase() {
+            const statusDiv = document.getElementById('status');
+            const infoDiv = document.getElementById('info');
+            const retryBtn = document.getElementById('retryBtn');
+
+            statusDiv.className = 'status checking';
+            statusDiv.innerHTML = '<div class="spinner"></div><span>Testing connection...</span>';
+            infoDiv.innerHTML = '';
+            retryBtn.style.display = 'none';
+
+            try {
+                const controller = new AbortController();
+                const timeout = setTimeout(() => controller.abort(), 8000);
+
+                const response = await fetch(`${SUPABASE_URL}/rest/v1/users?select=count&limit=1`, {
+                    headers: {
+                        'apikey': SUPABASE_KEY,
+                        'Authorization': `Bearer ${SUPABASE_KEY}`
+                    },
+                    signal: controller.signal
+                });
+
+                clearTimeout(timeout);
+
+                if (response.ok) {
+                    statusDiv.className = 'status success';
+                    statusDiv.innerHTML = '✓ Database Connected Successfully!';
+                    infoDiv.innerHTML = 'Your database is online and responding. You can now use the app.';
+                } else {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+            } catch (error) {
+                statusDiv.className = 'status error';
+                statusDiv.innerHTML = '✗ Database Connection Failed';
+
+                if (error.name === 'AbortError') {
+                    infoDiv.innerHTML = `
+                        <strong>Connection Timeout</strong><br><br>
+                        The database is not responding. This usually means:<br>
+                        • Database is frozen or overloaded<br>
+                        • Long-running queries are stuck<br>
+                        • Database needs a restart<br><br>
+                        <strong>To Fix:</strong><br>
+                        1. Go to <a href="https://supabase.com/dashboard" target="_blank" style="color:#3b82f6;">Supabase Dashboard</a><br>
+                        2. Select your project<br>
+                        3. Settings → Database → Restart Database<br>
+                        4. Wait 2-3 minutes and retry here
+                    `;
+                } else {
+                    infoDiv.innerHTML = `Error: ${error.message}<br>Please check your internet connection.`;
+                }
+
+                retryBtn.style.display = 'block';
+            }
+        }
+
+        checkDatabase();
+    </script>
+</body>
+</html>

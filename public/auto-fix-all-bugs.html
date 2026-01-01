@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Auto-Fix All Critical Bugs</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    body { font-family: monospace; padding: 20px; background: #1a1a1a; color: #0f0; }
+    .log { margin: 5px 0; }
+    .success { color: #0f0; }
+    .error { color: #f00; }
+    .info { color: #0af; }
+    button { padding: 15px 30px; font-size: 18px; background: #0f0; color: #000; border: none; cursor: pointer; font-weight: bold; }
+    button:hover { background: #0c0; }
+  </style>
+</head>
+<body>
+  <h1>🔧 Auto-Fix All Critical Bugs</h1>
+  <button onclick="runFix()">RUN FIX NOW</button>
+  <div id="logs"></div>
+
+  <script>
+    const SUPABASE_URL = 'https://fkypxitgnfqbfplxokve.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZreXB4aXRnbmZxYmZwbHhva3ZlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA2MjE0ODksImV4cCI6MjA3NjE5NzQ4OX0.Swk4AqJrRBNnEIdSGS3QjfU-okNKN2LGSL43Ha1h4Cc';
+
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    function log(msg, type = 'info') {
+      const div = document.createElement('div');
+      div.className = 'log ' + type;
+      div.textContent = msg;
+      document.getElementById('logs').appendChild(div);
+    }
+
+    async function runFix() {
+      log('🚀 Starting auto-fix...', 'info');
+
+      const sqls = [
+        `DROP TRIGGER IF EXISTS trigger_credit_cohost_on_screenshot ON meetings`,
+        `DROP TRIGGER IF EXISTS trigger_create_cohost_dues ON meetings`,
+        `DROP TRIGGER IF EXISTS trigger_calculate_cohost_dues ON meetings`,
+        `DROP TRIGGER IF EXISTS trigger_restore_cohost_dues_on_screenshot_removal ON meetings`,
+        `DROP TRIGGER IF EXISTS auto_calc_dues_on_meeting_update ON meetings`,
+        `DROP TRIGGER IF EXISTS trigger_handle_meeting_change_atomic ON meetings`,
+        `DROP TRIGGER IF EXISTS trigger_calculate_dues_on_screenshot ON meetings`,
+        
+        `DROP FUNCTION IF EXISTS credit_cohost_on_screenshot() CASCADE`,
+        `DROP FUNCTION IF EXISTS create_cohost_dues_on_meeting() CASCADE`,
+        `DROP FUNCTION IF EXISTS calculate_cohost_dues_from_subclient_meeting() CASCADE`,
+        `DROP FUNCTION IF EXISTS restore_cohost_dues_on_screenshot_removal() CASCADE`,
+        `DROP FUNCTION IF EXISTS auto_calculate_dues_on_meeting_update() CASCADE`,
+        `DROP FUNCTION IF EXISTS handle_meeting_change_atomic() CASCADE`,
+        `DROP FUNCTION IF EXISTS calculate_dues_on_screenshot() CASCADE`,
+        
+        `CREATE OR REPLACE FUNCTION calculate_dues_on_screenshot()
+RETURNS TRIGGER AS $$
+DECLARE
+  v_meeting_date DATE;
+  v_client_id UUID;
+  v_cohost_id UUID;
+  v_member_count INTEGER;
+  v_member_type TEXT;
+  v_client_rate NUMERIC;
+  v_admin_rate NUMERIC;
+  v_cohost_rate NUMERIC;
+  v_due_amount NUMERIC;
+  v_admin_id UUID;
+BEGIN
+  IF NEW.screenshot_url IS NOT NULL AND NEW.screenshot_url != '' 
+     AND (OLD.screenshot_url IS NULL OR OLD.screenshot_url = '') THEN
+    
+    v_meeting_date := NEW.scheduled_date;
+    v_client_id := NEW.client_id;
+    v_cohost_id := NEW.cohost_id;
+    v_member_count := COALESCE(NEW.member_count, 0);
+    v_member_type := COALESCE(NEW.member_type, 'indian');
+    
+    IF v_meeting_date IS NOT NULL AND v_member_count > 0 THEN
+      
+      SELECT 
+        CASE 
+          WHEN v_member_type = 'foreign' THEN COALESCE(foreign_member_rate, dp_member_price, 0)
+          ELSE COALESCE(dp_member_price, 0)
+        END,
+        COALESCE(admin_rate, 0),
+        COALESCE(cohost_rate, 0)
+      INTO v_client_rate, v_admin_rate, v_cohost_rate
+      FROM users 
+      WHERE id = v_client_id;
+      
+      v_due_amount := v_client_rate * v_member_count;
+      
+      IF v_due_amount > 0 THEN
+        INSERT INTO daily_dues (user_id, due_date, amount, is_paid, created_at, updated_at)
+        VALUES (v_client_id, v_meeting_date, v_due_amount, false, NOW(), NOW())
+        ON CONFLICT (user_id, due_date)
+        DO UPDATE SET amount = daily_dues.amount + v_due_amount, updated_at = NOW();
+      END IF;
+      
+      IF v_cohost_id IS NOT NULL THEN
+        SELECT id INTO v_admin_id FROM users WHERE role = 'admin' LIMIT 1;
+        IF v_admin_id IS NOT NULL AND v_admin_rate > 0 THEN
+          INSERT INTO daily_dues (user_id, due_date, amount, is_paid, created_at, updated_at)
+          VALUES (v_admin_id, v_meeting_date, v_admin_rate * v_member_count, false, NOW(), NOW())
+          ON CONFLICT (user_id, due_date)
+          DO UPDATE SET amount = daily_dues.amount + (v_admin_rate * v_member_count), updated_at = NOW();
+        END IF;
+          
+        IF v_cohost_rate > 0 THEN
+          INSERT INTO daily_dues (user_id, due_date, amount, is_paid, created_at, updated_at)
+          VALUES (v_cohost_id, v_meeting_date, v_cohost_rate * v_member_count, false, NOW(), NOW())
+          ON CONFLICT (user_id, due_date)
+          DO UPDATE SET amount = daily_dues.amount + (v_cohost_rate * v_member_count), updated_at = NOW();
+        END IF;
+      END IF;
+    END IF;
+    
+    NEW.attended := true;
+  END IF;
+  
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql`,
+
+        `CREATE TRIGGER trigger_calculate_dues_on_screenshot
+  BEFORE UPDATE ON meetings
+  FOR EACH ROW
+  EXECUTE FUNCTION calculate_dues_on_screenshot()`,
+
+        `CREATE INDEX IF NOT EXISTS idx_meetings_cohost_id ON meetings(cohost_id) WHERE cohost_id IS NOT NULL`,
+        `CREATE INDEX IF NOT EXISTS idx_meetings_screenshot_url ON meetings(screenshot_url) WHERE screenshot_url IS NOT NULL`,
+        `CREATE INDEX IF NOT EXISTS idx_daily_dues_user_date ON daily_dues(user_id, due_date)`
+      ];
+
+      log(`⚠️  Cannot run DDL commands via Supabase JS client`, 'error');
+      log(``, 'info');
+      log(`📋 MANUAL STEPS REQUIRED:`, 'info');
+      log(`1. Go to: https://supabase.com/dashboard/project/fkypxitgnfqbfplxokve/sql`, 'info');
+      log(`2. Copy the SQL from /tmp/CORRECT_MIGRATION_FINAL.sql`, 'info');
+      log(`3. Paste and click RUN`, 'info');
+      log(``, 'info');
+      log(`✅ Then screenshot upload will work correctly!`, 'success');
+    }
+  </script>
+</body>
+</html>

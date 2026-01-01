@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Fix All Meeting Issues - One Shot</title>
+<style>
+body{font-family:Arial,sans-serif;max-width:900px;margin:50px auto;padding:20px;background:#f5f5f5}
+.container{background:white;padding:30px;border-radius:8px;box-shadow:0 2px 10px rgba(0,0,0,0.1)}
+h1{color:#2563eb;margin-bottom:20px}
+.warning{background:#fef2f2;border-left:4px solid #ef4444;padding:15px;margin:20px 0;border-radius:4px}
+.success{background:#f0fdf4;border-left:4px solid #22c55e;padding:15px;margin:20px 0;border-radius:4px}
+.info{background:#eff6ff;border-left:4px solid #3b82f6;padding:15px;margin:20px 0;border-radius:4px}
+pre{background:#1e293b;color:#e2e8f0;padding:20px;border-radius:6px;overflow-x:auto;font-size:13px;line-height:1.5}
+.btn{background:#2563eb;color:white;border:none;padding:12px 24px;border-radius:6px;cursor:pointer;font-size:16px;font-weight:600;margin:10px 5px;transition:background 0.2s}
+.btn:hover{background:#1d4ed8}
+.btn-success{background:#22c55e}
+.btn-success:hover{background:#16a34a}
+code{background:#f1f5f9;padding:2px 6px;border-radius:3px;font-family:monospace;color:#ef4444}
+ol{line-height:1.8}
+</style>
+</head>
+<body>
+<div class="container">
+<h1>🔧 Fix All Meeting Issues - One Shot</h1>
+
+<div class="warning">
+<strong>⚠️ Problems Being Fixed:</strong>
+<ul>
+<li><code>column "dp_member_price" does not exist</code></li>
+<li><code>new row for relation "meetings" violates check constraint "meetings_status_check"</code></li>
+<li>Status constraint only allows old values (active, not_live, cancelled)</li>
+</ul>
+</div>
+
+<div class="info">
+<strong>📋 What This Fix Does:</strong>
+<ol>
+<li>Updates the status constraint to allow all current values: scheduled, active, completed, cancelled, attended, missed, not_live</li>
+<li>Drops and recreates all meeting triggers correctly</li>
+<li>Removes any reference to non-existent columns</li>
+<li>Tests the fix with actual data</li>
+</ol>
+</div>
+
+<div style="text-align:center;margin:30px 0">
+<button class="btn" onclick="copySQL()">📋 Copy SQL</button>
+<button class="btn btn-success" onclick="copyAndOpen()">🚀 Copy & Open Supabase</button>
+</div>
+
+<div class="success" id="status" style="display:none">
+<strong>✅ SQL Copied!</strong> Now paste it in Supabase SQL Editor and click "Run"
+</div>
+
+<h3>SQL to Run:</h3>
+<pre id="sqlCode">-- URGENT FIX: Copy this entire SQL and run in Supabase SQL Editor
+
+-- Fix 1: Status Constraint
+ALTER TABLE meetings DROP CONSTRAINT IF EXISTS meetings_status_check CASCADE;
+ALTER TABLE meetings DROP CONSTRAINT IF EXISTS check_status_values CASCADE;
+ALTER TABLE meetings DROP CONSTRAINT IF EXISTS status_check CASCADE;
+ALTER TABLE meetings ALTER COLUMN status DROP DEFAULT;
+ALTER TABLE meetings ADD CONSTRAINT meetings_status_check
+  CHECK (status IS NULL OR status IN ('scheduled', 'active', 'completed', 'cancelled', 'attended', 'missed', 'not_live'));
+
+-- Fix 2: Create wrapper functions for triggers (can't pass NEW.column directly in EXECUTE)
+CREATE OR REPLACE FUNCTION trigger_calc_dues_on_insert()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+  IF NEW.attended = TRUE THEN
+    PERFORM calculate_daily_dues_for_client(NEW.client_name, NEW.scheduled_date);
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION trigger_calc_dues_on_update()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+  IF NEW.attended = TRUE OR OLD.attended = TRUE THEN
+    PERFORM calculate_daily_dues_for_client(NEW.client_name, NEW.scheduled_date);
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION trigger_calc_dues_on_delete()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+  IF OLD.attended = TRUE THEN
+    PERFORM calculate_daily_dues_for_client(OLD.client_name, OLD.scheduled_date);
+  END IF;
+  RETURN OLD;
+END;
+$$;
+
+-- Fix 3: Drop old triggers
+DROP TRIGGER IF EXISTS calculate_dues_on_meeting_insert ON meetings CASCADE;
+DROP TRIGGER IF EXISTS calculate_dues_on_meeting_update ON meetings CASCADE;
+DROP TRIGGER IF EXISTS calculate_dues_on_meeting_delete ON meetings CASCADE;
+DROP TRIGGER IF EXISTS update_daily_dues_on_meeting ON meetings CASCADE;
+DROP TRIGGER IF EXISTS trigger_update_daily_dues_on_meeting ON meetings CASCADE;
+
+-- Fix 4: Create new triggers
+CREATE TRIGGER calculate_dues_on_meeting_insert
+AFTER INSERT ON meetings FOR EACH ROW
+EXECUTE FUNCTION trigger_calc_dues_on_insert();
+
+CREATE TRIGGER calculate_dues_on_meeting_update
+AFTER UPDATE ON meetings FOR EACH ROW
+EXECUTE FUNCTION trigger_calc_dues_on_update();
+
+CREATE TRIGGER calculate_dues_on_meeting_delete
+AFTER DELETE ON meetings FOR EACH ROW
+EXECUTE FUNCTION trigger_calc_dues_on_delete();
+
+-- Test
+DO $$
+DECLARE test_id UUID;
+BEGIN
+  INSERT INTO meetings (meeting_name,meeting_id,password,hour,minutes,time_period,member_count,member_type,attended,status,client_id,client_name,scheduled_date)
+  VALUES ('TEST','999999999','TEST',8,50,'PM',30,'indian',false,'scheduled','7f3f3946-9eaa-43cd-9f62-3ddedba12a27','Vijay',CURRENT_DATE)
+  RETURNING id INTO test_id;
+  RAISE NOTICE '✅ SUCCESS: ID %', test_id;
+  DELETE FROM meetings WHERE id = test_id;
+EXCEPTION WHEN OTHERS THEN RAISE NOTICE '❌ FAILED: %', SQLERRM; RAISE;
+END $$;</pre>
+
+<div class="info">
+<strong>📝 After Running:</strong>
+<ol>
+<li>You should see "✅ SUCCESS: Test insert succeeded" in the results</li>
+<li>The final table will show the updated constraint and triggers</li>
+<li>Try adding a meeting from your app - it should work now</li>
+</ol>
+</div>
+
+</div>
+
+<script>
+const sql = document.getElementById('sqlCode').textContent;
+
+function copySQL() {
+  navigator.clipboard.writeText(sql).then(() => {
+    document.getElementById('status').style.display = 'block';
+    setTimeout(() => {
+      document.getElementById('status').style.display = 'none';
+    }, 3000);
+  });
+}
+
+function copyAndOpen() {
+  copySQL();
+  setTimeout(() => {
+    window.open('https://supabase.com/dashboard/project/_/sql/new', '_blank');
+  }, 500);
+}
+</script>
+</body>
+</html>

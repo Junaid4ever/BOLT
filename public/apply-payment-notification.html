@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Apply Payment Notification Migration</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+  <h1>Applying Payment Notification Migration...</h1>
+  <pre id="output"></pre>
+
+  <script type="module">
+    const output = document.getElementById('output');
+
+    const SUPABASE_URL = 'https://fkypxitgnfqbfplxokve.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZreXB4aXRnbmZxYmZwbHhva3ZlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA2MjE0ODksImV4cCI6MjA3NjE5NzQ4OX0.Swk4AqJrRBNnEIdSGS3QjfU-okNKN2LGSL43Ha1h4Cc';
+
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    const sql = `
+-- Add notification tracking field
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'payments' AND column_name = 'notification_shown'
+  ) THEN
+    ALTER TABLE payments ADD COLUMN notification_shown boolean DEFAULT false;
+  END IF;
+END $$;
+
+-- Create index for faster notification queries
+CREATE INDEX IF NOT EXISTS idx_payments_notification_pending
+ON payments(client_name, notification_shown)
+WHERE status = 'approved' AND notification_shown = false;
+
+-- Function to mark notification as pending when payment is approved
+CREATE OR REPLACE FUNCTION mark_payment_notification_pending()
+RETURNS trigger AS $$
+BEGIN
+  IF NEW.status = 'approved' AND (OLD.status IS NULL OR OLD.status != 'approved') THEN
+    NEW.notification_shown := false;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Trigger to automatically mark notification as pending on approval
+DROP TRIGGER IF EXISTS trigger_mark_payment_notification_pending ON payments;
+CREATE TRIGGER trigger_mark_payment_notification_pending
+  BEFORE UPDATE ON payments
+  FOR EACH ROW
+  EXECUTE FUNCTION mark_payment_notification_pending();
+`;
+
+    try {
+      output.textContent = 'Applying migration...\n';
+
+      const { data, error } = await supabase.rpc('exec_sql', { sql_query: sql });
+
+      if (error) {
+        output.textContent += 'Error: ' + JSON.stringify(error, null, 2);
+      } else {
+        output.textContent += '✅ Migration applied successfully!\n';
+        output.textContent += '\nPayment notification tracking has been added.';
+      }
+    } catch (err) {
+      output.textContent += 'Error: ' + err.message;
+    }
+  </script>
+</body>
+</html>

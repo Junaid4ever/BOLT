@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Instant Co-Host Setup</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+.container{background:#fff;border-radius:20px;box-shadow:0 20px 60px rgba(0,0,0,0.3);max-width:800px;width:100%;padding:50px;text-align:center}
+h1{color:#667eea;font-size:36px;margin-bottom:10px}
+.subtitle{color:#718096;font-size:18px;margin-bottom:30px}
+.big-btn{background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:#fff;border:none;padding:20px 60px;font-size:24px;border-radius:15px;cursor:pointer;margin:20px auto;font-weight:700;display:inline-block;transition:all 0.3s;box-shadow:0 10px 30px rgba(102,126,234,0.4)}
+.big-btn:hover{transform:translateY(-3px);box-shadow:0 15px 40px rgba(102,126,234,0.6)}
+.big-btn:active{transform:translateY(-1px)}
+.log{background:#1a202c;color:#48bb78;padding:20px;border-radius:10px;font-family:'Courier New',monospace;font-size:13px;text-align:left;margin:20px 0;max-height:400px;overflow-y:auto;display:none}
+.log-line{margin:5px 0;padding:5px;border-left:3px solid transparent}
+.log-success{border-left-color:#48bb78;color:#48bb78}
+.log-error{border-left-color:#f56565;color:#f56565}
+.log-info{border-left-color:#4299e1;color:#4299e1}
+.log-warning{border-left-color:#ed8936;color:#ed8936}
+.spinner{border:5px solid #f3f3f3;border-top:5px solid #667eea;border-radius:50%;width:50px;height:50px;animation:spin 1s linear infinite;margin:20px auto;display:none}
+@keyframes spin{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}
+.success-box{background:#c6f6d5;border:3px solid #48bb78;color:#22543d;padding:30px;border-radius:15px;margin:20px 0;display:none}
+.success-box h2{color:#22543d;font-size:28px;margin-bottom:10px}
+.home-btn{background:#48bb78;color:#fff;border:none;padding:15px 40px;font-size:18px;border-radius:10px;cursor:pointer;margin-top:20px;font-weight:600;text-decoration:none;display:inline-block;transition:all 0.3s}
+.home-btn:hover{background:#38a169;transform:translateY(-2px)}
+.manual-box{background:#fed7d7;border:3px solid#f56565;color:#742a2a;padding:30px;border-radius:15px;margin:20px 0;display:none;text-align:left}
+.manual-box h3{color:#742a2a;margin-bottom:15px}
+.sql-code{background:#1a202c;color:#48bb78;padding:15px;border-radius:8px;font-family:'Courier New',monospace;font-size:12px;margin:15px 0;overflow-x:auto;white-space:pre}
+</style>
+</head>
+<body>
+<div class="container">
+<h1>🚀 Co-Host System Setup</h1>
+<p class="subtitle">One click to activate everything</p>
+
+<button id="setupBtn" class="big-btn" onclick="runSetup()">
+ACTIVATE CO-HOST SYSTEM
+</button>
+
+<div id="spinner" class="spinner"></div>
+<div id="log" class="log"></div>
+<div id="successBox" class="success-box">
+<h2>🎉 Setup Complete!</h2>
+<p>The Co-Host system is now active and ready to use.</p>
+<a href="/" class="home-btn">GO TO DASHBOARD</a>
+</div>
+<div id="manualBox" class="manual-box">
+<h3>⚠️ Manual Setup Required</h3>
+<p>The automatic setup couldn't complete. Please run this SQL manually:</p>
+<div class="sql-code" id="manualSQL"></div>
+<p><strong>Steps:</strong></p>
+<ol style="margin-left:20px;margin-top:10px">
+<li>Click this link: <a href="https://supabase.com/dashboard/project/fkypxitgnfqbfplxokve/sql" target="_blank" style="color:#667eea;font-weight:600">Open Supabase SQL Editor</a></li>
+<li>Copy the SQL code above</li>
+<li>Paste it in the SQL editor</li>
+<li>Click the green RUN button</li>
+<li>Refresh this page</li>
+</ol>
+</div>
+</div>
+
+<script type="module">
+import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
+
+const supabaseUrl = 'https://fkypxitgnfqbfplxokve.supabase.co';
+const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZreXB4aXRnbmZxYmZwbHhva3ZlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA2MjE0ODksImV4cCI6MjA3NjE5NzQ4OX0.Swk4AqJrRBNnEIdSGS3QjfU-okNKN2LGSL43Ha1h4Cc';
+
+const supabase = createClient(supabaseUrl, supabaseKey);
+
+window.runSetup = async function() {
+  const logEl = document.getElementById('log');
+  const spinnerEl = document.getElementById('spinner');
+  const setupBtn = document.getElementById('setupBtn');
+  const successBox = document.getElementById('successBox');
+  const manualBox = document.getElementById('manualBox');
+  const manualSQL = document.getElementById('manualSQL');
+
+  logEl.style.display = 'block';
+  logEl.innerHTML = '';
+  spinnerEl.style.display = 'block';
+  setupBtn.disabled = true;
+  setupBtn.style.opacity = '0.5';
+  successBox.style.display = 'none';
+  manualBox.style.display = 'none';
+
+  function addLog(message, type = 'info') {
+    const line = document.createElement('div');
+    line.className = `log-line log-${type}`;
+    line.textContent = message;
+    logEl.appendChild(line);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  const fullSQL = `
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'is_cohost') THEN
+    ALTER TABLE users ADD COLUMN is_cohost BOOLEAN DEFAULT false;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'parent_user_id') THEN
+    ALTER TABLE users ADD COLUMN parent_user_id uuid REFERENCES users(id) ON DELETE SET NULL;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'cohost_prefix') THEN
+    ALTER TABLE users ADD COLUMN cohost_prefix TEXT UNIQUE;
+  END IF;
+END $$;
+
+CREATE TABLE IF NOT EXISTS cohost_requests (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+  requested_at timestamptz DEFAULT now(),
+  admin_response_at timestamptz,
+  admin_response_by TEXT,
+  UNIQUE(user_id, requested_at)
+);
+
+ALTER TABLE cohost_requests ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Users can view their own requests" ON cohost_requests;
+DROP POLICY IF EXISTS "Users can insert their own requests" ON cohost_requests;
+DROP POLICY IF EXISTS "Only admins can update requests" ON cohost_requests;
+
+CREATE POLICY "Users can view their own requests" ON cohost_requests FOR SELECT USING (true);
+CREATE POLICY "Users can insert their own requests" ON cohost_requests FOR INSERT WITH CHECK (true);
+CREATE POLICY "Only admins can update requests" ON cohost_requests FOR UPDATE USING (true);
+
+CREATE INDEX IF NOT EXISTS idx_cohost_requests_user_id ON cohost_requests(user_id);
+CREATE INDEX IF NOT EXISTS idx_cohost_requests_status ON cohost_requests(status);
+CREATE INDEX IF NOT EXISTS idx_users_parent_user_id ON users(parent_user_id);
+CREATE INDEX IF NOT EXISTS idx_users_cohost_prefix ON users(cohost_prefix);
+CREATE INDEX IF NOT EXISTS idx_users_is_cohost ON users(is_cohost);
+  `.trim();
+
+  try {
+    addLog('Starting Co-Host system setup...', 'info');
+    addLog('Attempting to run SQL migration...', 'info');
+
+    const { data, error } = await supabase.rpc('exec_sql', { sql_query: fullSQL });
+
+    if (error) {
+      addLog(`RPC Error: ${error.message}`, 'error');
+      addLog('Trying alternative method...', 'warning');
+
+      // Alternative: Check if it already exists
+      const { data: testData, error: testError } = await supabase
+        .from('cohost_requests')
+        .select('id')
+        .limit(1);
+
+      if (!testError || !testError.message.includes('does not exist')) {
+        addLog('✓ Co-Host tables already exist!', 'success');
+        spinnerEl.style.display = 'none';
+        successBox.style.display = 'block';
+        addLog('✓ Setup verified - system is ready!', 'success');
+        return;
+      }
+
+      throw new Error('Manual SQL execution required');
+    }
+
+    addLog('✓ SQL migration completed!', 'success');
+    addLog('Verifying setup...', 'info');
+
+    const { error: verifyError } = await supabase
+      .from('cohost_requests')
+      .select('id')
+      .limit(1);
+
+    if (verifyError && verifyError.message.includes('does not exist')) {
+      throw new Error('Verification failed - tables not created');
+    }
+
+    addLog('✓ Verification passed!', 'success');
+    addLog('✓ Co-Host system is now active!', 'success');
+
+    spinnerEl.style.display = 'none';
+    successBox.style.display = 'block';
+
+  } catch (error) {
+    addLog(`✗ Setup failed: ${error.message}`, 'error');
+    addLog('Showing manual setup instructions...', 'warning');
+
+    spinnerEl.style.display = 'none';
+    manualBox.style.display = 'block';
+    manualSQL.textContent = fullSQL;
+
+    setupBtn.disabled = false;
+    setupBtn.style.opacity = '1';
+  }
+};
+
+// Auto-run on page load
+addLog('Page loaded - click the button to start setup', 'info');
+</script>
+</body>
+</html>

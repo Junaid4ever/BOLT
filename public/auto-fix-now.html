@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Auto-Fix Both Issues</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:system-ui,sans-serif;background:linear-gradient(135deg,#1e293b 0%,#0f172a 100%);color:#fff;padding:20px;display:flex;align-items:center;justify-content:center;min-height:100vh}
+.container{background:#1e293b;border:4px solid #10b981;border-radius:24px;padding:60px;max-width:900px;width:100%;box-shadow:0 25px 50px -12px rgba(0,0,0,0.9)}
+h1{color:#10b981;font-size:48px;margin-bottom:20px;text-align:center;text-shadow:0 0 30px rgba(16,185,129,0.6)}
+.subtitle{color:#94a3b8;text-align:center;font-size:20px;margin-bottom:40px;line-height:1.6}
+.btn{background:linear-gradient(135deg,#10b981,#059669);color:#fff;border:none;padding:30px 60px;border-radius:20px;font-size:32px;font-weight:900;cursor:pointer;width:100%;margin:20px 0;transition:all .3s;box-shadow:0 15px 35px rgba(16,185,129,0.5);text-transform:uppercase;letter-spacing:2px}
+.btn:hover{transform:translateY(-5px);box-shadow:0 20px 45px rgba(16,185,129,0.7);background:linear-gradient(135deg,#059669,#047857)}
+.btn:active{transform:translateY(0)}
+.btn:disabled{background:#64748b;cursor:not-allowed;transform:none}
+.status{text-align:center;font-size:24px;margin:30px 0;padding:30px;background:#0f172a;border-radius:16px;font-weight:700;border:2px solid #334155}
+.spinner{border:6px solid #334155;border-top:6px solid #10b981;border-radius:50%;width:60px;height:60px;animation:spin 1s linear infinite;margin:20px auto}
+@keyframes spin{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}
+.success{background:#10b981;color:#000;padding:30px;border-radius:16px;margin:20px 0;font-size:20px;font-weight:700;text-align:center;animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.8}}
+.error{background:#ef4444;color:#fff;padding:30px;border-radius:16px;margin:20px 0;font-size:18px;font-weight:700}
+.fix-list{background:#0f172a;padding:25px;border-radius:16px;margin:25px 0;border:2px solid #10b981}
+.fix-list li{margin:15px 0;font-size:18px;padding-left:35px;position:relative;line-height:1.6}
+.fix-list li:before{content:'✅';position:absolute;left:0;font-size:24px}
+</style>
+</head>
+<body>
+<div class="container">
+<h1>🔧 AUTO-FIX DONO ISSUES 🔧</h1>
+<div class="subtitle">
+Automatically fix both "Mark as Not Live" & "Selected Days" bugs<br>
+No manual work required - just click the button!
+</div>
+
+<div class="fix-list">
+<strong style="color:#10b981;font-size:22px;display:block;margin-bottom:15px">Kya fix hoga:</strong>
+<li>❌ Mark as Not Live button error</li>
+<li>❌ Mark as Wrong Credentials button error</li>
+<li>❌ Prashant Blockista skip days issue</li>
+<li>❌ All 4 database functions updated</li>
+</div>
+
+<button id="fixBtn" class="btn" onclick="autoFix()">FIX EVERYTHING NOW</button>
+
+<div id="status" class="status" style="display:none">
+<div class="spinner"></div>
+<div style="margin-top:20px">Applying fixes...</div>
+</div>
+
+<div id="result"></div>
+</div>
+
+<script>
+async function autoFix() {
+  const btn = document.getElementById('fixBtn');
+  const status = document.getElementById('status');
+  const result = document.getElementById('result');
+
+  btn.disabled = true;
+  status.style.display = 'block';
+  result.innerHTML = '';
+
+  try {
+    const response = await fetch('https://fkypxitgnfqbfplxokve.supabase.co/functions/v1/auto-fix-everything', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZreXB4aXRnbmZxYmZwbHhva3ZlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA2MjE0ODksImV4cCI6MjA3NjE5NzQ4OX0.Swk4AqJrRBNnEIdSGS3QjfU-okNKN2LGSL43Ha1h4Cc',
+        'Content-Type': 'application/json'
+      }
+    });
+
+    const data = await response.json();
+
+    status.style.display = 'none';
+
+    if (data.success) {
+      result.innerHTML = `
+        <div class="success">
+          <div style="font-size:64px;margin-bottom:20px">✅</div>
+          <div style="font-size:32px;margin-bottom:20px">ALL FIXES APPLIED!</div>
+          <div class="fix-list" style="margin-top:30px;text-align:left">
+            ${data.fixes.map(fix => '<li>' + fix.replace('✅ ', '') + '</li>').join('')}
+          </div>
+          <div style="margin-top:30px;font-size:18px;color:#000">
+            Refresh your admin panel - both issues are fixed!
+          </div>
+        </div>
+      `;
+    } else {
+      throw new Error(data.error || 'Unknown error');
+    }
+  } catch (error) {
+    status.style.display = 'none';
+    result.innerHTML = `
+      <div class="error">
+        <div style="font-size:48px;margin-bottom:15px">❌</div>
+        <div style="font-size:24px;margin-bottom:15px">Error occurred:</div>
+        <div style="font-size:16px;font-family:monospace;background:rgba(0,0,0,0.3);padding:20px;border-radius:8px;margin-top:15px">
+          ${error.message}
+        </div>
+      </div>
+    `;
+    btn.disabled = false;
+  }
+}
+</script>
+</body>
+</html>

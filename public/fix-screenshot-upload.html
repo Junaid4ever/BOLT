@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fix Screenshot Upload - One Click</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      max-width: 1000px;
+      margin: 50px auto;
+      padding: 20px;
+      background: #0f172a;
+      color: #e2e8f0;
+    }
+    .container {
+      background: #1e293b;
+      padding: 30px;
+      border-radius: 10px;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+    }
+    h1 {
+      color: #10b981;
+      margin-bottom: 20px;
+    }
+    button {
+      background: #10b981;
+      color: white;
+      border: none;
+      padding: 15px 30px;
+      font-size: 18px;
+      border-radius: 8px;
+      cursor: pointer;
+      margin: 10px 5px;
+      font-weight: bold;
+    }
+    button:hover {
+      background: #059669;
+    }
+    button:disabled {
+      background: #6b7280;
+      cursor: not-allowed;
+    }
+    .status {
+      margin-top: 20px;
+      padding: 15px;
+      border-radius: 8px;
+      display: none;
+    }
+    .status.success {
+      background: #065f46;
+      color: #d1fae5;
+      display: block;
+    }
+    .status.error {
+      background: #7f1d1d;
+      color: #fecaca;
+      display: block;
+    }
+    .status.info {
+      background: #1e3a8a;
+      color: #dbeafe;
+      display: block;
+    }
+    pre {
+      background: #0f172a;
+      padding: 15px;
+      border-radius: 5px;
+      overflow-x: auto;
+      max-height: 400px;
+      font-size: 12px;
+    }
+    .hindi {
+      color: #fbbf24;
+      font-weight: 600;
+      margin: 10px 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🔧 Fix Screenshot Upload - One Click Fix</h1>
+    <p class="hindi">ये fix kya karega:</p>
+    <ul>
+      <li>Screenshot upload ka "column not found" error fix karega</li>
+      <li>Jaise hi admin screenshot upload kare, instantly dues ban jayegi</li>
+      <li>Meeting automatically attended mark ho jayega</li>
+      <li>Cohost system bhi sahi se kaam karega</li>
+    </ul>
+
+    <button id="applyBtn" onclick="applyFix()">✨ Abhi Fix Karo (1 Click)</button>
+    <button onclick="location.reload()">🔄 Refresh</button>
+
+    <div id="status" class="status"></div>
+  </div>
+
+  <script>
+    const SUPABASE_URL = 'https://fkypxitgnfqbfplxokve.supabase.co';
+    const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZreXB4aXRnbmZxYmZwbHhva3ZlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA2MjE0ODksImV4cCI6MjA3NjE5NzQ4OX0.Swk4AqJrRBNnEIdSGS3QjfU-okNKN2LGSL43Ha1h4Cc';
+
+    const migration = `
+-- Step 1: Remove ALL old triggers
+DROP TRIGGER IF EXISTS trigger_credit_cohost_on_screenshot ON meetings;
+DROP TRIGGER IF EXISTS trigger_create_cohost_dues ON meetings;
+DROP TRIGGER IF EXISTS trigger_calculate_cohost_dues ON meetings;
+DROP TRIGGER IF EXISTS trigger_restore_cohost_dues_on_screenshot_removal ON meetings;
+DROP TRIGGER IF EXISTS auto_calc_dues_on_meeting_update ON meetings;
+DROP TRIGGER IF EXISTS trigger_handle_meeting_change_atomic ON meetings;
+DROP TRIGGER IF EXISTS trigger_calculate_dues_on_screenshot ON meetings;
+
+-- Step 2: Remove old functions
+DROP FUNCTION IF EXISTS credit_cohost_on_screenshot() CASCADE;
+DROP FUNCTION IF EXISTS create_cohost_dues_on_meeting() CASCADE;
+DROP FUNCTION IF EXISTS calculate_cohost_dues_from_subclient_meeting() CASCADE;
+DROP FUNCTION IF EXISTS restore_cohost_dues_on_screenshot_removal() CASCADE;
+DROP FUNCTION IF EXISTS auto_calculate_dues_on_meeting_update() CASCADE;
+DROP FUNCTION IF EXISTS handle_meeting_change_atomic() CASCADE;
+DROP FUNCTION IF EXISTS calculate_dues_on_screenshot() CASCADE;
+
+-- Step 3: Create SIMPLE function with correct column names
+CREATE OR REPLACE FUNCTION simple_screenshot_billing()
+RETURNS TRIGGER AS $$
+DECLARE
+  v_client_rate NUMERIC;
+  v_due_amount NUMERIC;
+  v_admin_id UUID;
+  v_admin_name TEXT;
+  v_cohost_name TEXT;
+  v_admin_rate NUMERIC;
+  v_cohost_rate NUMERIC;
+BEGIN
+  IF NEW.screenshot_url IS NOT NULL
+     AND NEW.screenshot_url != ''
+     AND (OLD.screenshot_url IS NULL OR OLD.screenshot_url = '') THEN
+
+    IF NEW.scheduled_date IS NOT NULL
+       AND NEW.member_count > 0
+       AND NEW.client_name IS NOT NULL THEN
+
+      IF NEW.member_type = 'foreigners' THEN
+        SELECT COALESCE(price_per_foreign_member, 0.8) INTO v_client_rate
+        FROM users WHERE id = NEW.client_id;
+      ELSIF NEW.member_type = 'dp' THEN
+        SELECT COALESCE(price_per_dp_member, 240) INTO v_client_rate
+        FROM users WHERE id = NEW.client_id;
+      ELSE
+        SELECT COALESCE(price_per_member, 0.8) INTO v_client_rate
+        FROM users WHERE id = NEW.client_id;
+      END IF;
+
+      v_due_amount := v_client_rate * NEW.member_count;
+
+      IF v_due_amount > 0 THEN
+        INSERT INTO daily_dues (client_id, client_name, date, amount, created_at)
+        VALUES (NEW.client_id, NEW.client_name, NEW.scheduled_date, v_due_amount, NOW())
+        ON CONFLICT (client_name, date)
+        DO UPDATE SET amount = daily_dues.amount + v_due_amount;
+      END IF;
+
+      IF NEW.cohost_id IS NOT NULL THEN
+        SELECT id, name INTO v_admin_id, v_admin_name
+        FROM users
+        WHERE role = 'admin'
+        LIMIT 1;
+
+        SELECT
+          name,
+          COALESCE(admin_rate, 1.0),
+          COALESCE(cohost_rate, 1.0)
+        INTO v_cohost_name, v_admin_rate, v_cohost_rate
+        FROM users
+        WHERE id = NEW.cohost_id;
+
+        IF v_admin_id IS NOT NULL AND v_admin_name IS NOT NULL AND v_admin_rate > 0 THEN
+          INSERT INTO daily_dues (client_id, client_name, date, amount, created_at)
+          VALUES (v_admin_id, v_admin_name, NEW.scheduled_date, v_admin_rate * NEW.member_count, NOW())
+          ON CONFLICT (client_name, date)
+          DO UPDATE SET amount = daily_dues.amount + (v_admin_rate * NEW.member_count);
+        END IF;
+
+        IF v_cohost_name IS NOT NULL AND v_cohost_rate > 0 THEN
+          INSERT INTO daily_dues (client_id, client_name, date, amount, created_at)
+          VALUES (NEW.cohost_id, v_cohost_name, NEW.scheduled_date, v_cohost_rate * NEW.member_count, NOW())
+          ON CONFLICT (client_name, date)
+          DO UPDATE SET amount = daily_dues.amount + (v_cohost_rate * NEW.member_count);
+        END IF;
+      END IF;
+
+      NEW.attended := true;
+    END IF;
+  END IF;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trigger_simple_screenshot_billing
+  BEFORE UPDATE ON meetings
+  FOR EACH ROW
+  EXECUTE FUNCTION simple_screenshot_billing();
+
+CREATE INDEX IF NOT EXISTS idx_meetings_cohost_id ON meetings(cohost_id) WHERE cohost_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_daily_dues_lookup ON daily_dues(client_name, date);
+`;
+
+    async function applyFix() {
+      const btn = document.getElementById('applyBtn');
+      const status = document.getElementById('status');
+
+      btn.disabled = true;
+      btn.textContent = '⏳ Applying fix...';
+      status.className = 'status info';
+      status.textContent = 'Fixing screenshot upload... Thoda wait karo...';
+
+      try {
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/exec_sql`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': SUPABASE_KEY,
+            'Authorization': `Bearer ${SUPABASE_KEY}`
+          },
+          body: JSON.stringify({ sql_query: migration })
+        });
+
+        if (!response.ok) {
+          throw new Error('RPC function not found. Manual SQL needed.');
+        }
+
+        status.className = 'status success';
+        status.innerHTML = `
+          <h3>✅ Fix Successfully Applied!</h3>
+          <p class="hindi">Sab sahi ho gaya! Ab:</p>
+          <ul>
+            <li>Screenshot upload karega bina error ke</li>
+            <li>Dues instantly ban jayengi</li>
+            <li>Meeting auto-attended mark ho jayega</li>
+          </ul>
+          <p><strong>Test karo abhi!</strong></p>
+        `;
+        btn.textContent = '✅ Fixed Successfully!';
+      } catch (error) {
+        status.className = 'status error';
+        status.innerHTML = `
+          <h3>⚠️ Manual SQL Run Karna Hoga</h3>
+          <p class="hindi">Bhai, automatically nahi apply ho paya. Tum khud manually run karo:</p>
+          <ol>
+            <li>Niche wala SQL copy karo (CTRL+C)</li>
+            <li>Supabase SQL Editor me jao: <a href="https://supabase.com/dashboard/project/fkypxitgnfqbfplxokve/sql" target="_blank" style="color: #60a5fa;">Click here</a></li>
+            <li>SQL paste karo aur RUN button dabao</li>
+          </ol>
+          <pre>${migration}</pre>
+        `;
+        btn.textContent = '❌ Failed - Manual SQL Needed';
+        btn.disabled = false;
+      }
+    }
+  </script>
+</body>
+</html>

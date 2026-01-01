@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🚨 EMERGENCY: Restore All Clients</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: linear-gradient(135deg, #dc2626 0%, #991b1b 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .container {
+      background: white;
+      border-radius: 20px;
+      padding: 40px;
+      max-width: 800px;
+      width: 100%;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+    }
+    h1 {
+      color: #dc2626;
+      font-size: 32px;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .subtitle {
+      color: #666;
+      font-size: 16px;
+      margin-bottom: 30px;
+    }
+    .status {
+      background: #fef2f2;
+      border: 2px solid #dc2626;
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 30px;
+    }
+    .status h3 {
+      color: #dc2626;
+      margin-bottom: 10px;
+      font-size: 18px;
+    }
+    .btn {
+      background: linear-gradient(135deg, #dc2626, #991b1b);
+      color: white;
+      border: none;
+      padding: 18px 36px;
+      border-radius: 12px;
+      font-size: 18px;
+      font-weight: 600;
+      cursor: pointer;
+      width: 100%;
+      transition: all 0.3s;
+      box-shadow: 0 4px 12px rgba(220, 38, 38, 0.3);
+    }
+    .btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(220, 38, 38, 0.4);
+    }
+    .btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+    }
+    .output {
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+      padding: 20px;
+      margin-top: 20px;
+      font-family: 'Courier New', monospace;
+      font-size: 14px;
+      max-height: 400px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      display: none;
+    }
+    .output.show {
+      display: block;
+    }
+    .success {
+      color: #059669;
+      font-weight: 600;
+    }
+    .error {
+      color: #dc2626;
+      font-weight: 600;
+    }
+    .warning {
+      background: #fffbeb;
+      border-left: 4px solid #f59e0b;
+      padding: 15px;
+      margin: 20px 0;
+      border-radius: 8px;
+    }
+    .warning strong {
+      color: #f59e0b;
+      display: block;
+      margin-bottom: 5px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🚨 EMERGENCY CLIENT RESTORATION</h1>
+    <p class="subtitle">All clients will be restored to the admin panel immediately</p>
+
+    <div class="status">
+      <h3>⚠️ What Happened:</h3>
+      <p>The role column update caused clients to be hidden. This will restore ALL clients back to the admin panel.</p>
+    </div>
+
+    <div class="warning">
+      <strong>⚡ INSTANT FIX</strong>
+      This will restore all clients immediately. No data will be lost.
+    </div>
+
+    <button id="restoreBtn" class="btn">
+      🔧 RESTORE ALL CLIENTS NOW
+    </button>
+
+    <div id="output" class="output"></div>
+  </div>
+
+  <script type="module">
+    import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+    const supabaseUrl = 'https://fkypxitgnfqbfplxokve.supabase.co';
+    const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZreXB4aXRnbmZxYmZwbHhva3ZlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA2MjE0ODksImV4cCI6MjA3NjE5NzQ4OX0.Swk4AqJrRBNnEIdSGS3QjfU-okNKN2LGSL43Ha1h4Cc';
+
+    const supabase = createClient(supabaseUrl, supabaseKey);
+    const output = document.getElementById('output');
+    const restoreBtn = document.getElementById('restoreBtn');
+
+    function log(message, type = 'info') {
+      const line = document.createElement('div');
+      if (type === 'success') line.className = 'success';
+      if (type === 'error') line.className = 'error';
+      line.textContent = message;
+      output.appendChild(line);
+      output.scrollTop = output.scrollHeight;
+    }
+
+    restoreBtn.addEventListener('click', async () => {
+      output.innerHTML = '';
+      output.classList.add('show');
+      restoreBtn.disabled = true;
+
+      log('🚨 Starting emergency restoration...\n');
+
+      try {
+        // Step 1: Check current status
+        log('📊 Checking current database status...');
+        const { data: users, error: checkError } = await supabase
+          .from('users')
+          .select('role, is_admin, cohost_rate');
+
+        if (checkError) throw checkError;
+
+        const adminCount = users.filter(u => u.is_admin || u.role === 'admin').length;
+        const clientCount = users.filter(u => u.role === 'client').length;
+        const cohostCount = users.filter(u => u.role === 'cohost').length;
+        const nullCount = users.filter(u => !u.role).length;
+
+        log(`Current Status:`);
+        log(`  Admins: ${adminCount}`);
+        log(`  Clients: ${clientCount}`);
+        log(`  Cohosts: ${cohostCount}`);
+        log(`  NULL roles: ${nullCount}\n`);
+
+        // Step 2: Fix NULL roles
+        log('🔧 Fixing NULL roles...');
+        const { error: nullError } = await supabase
+          .from('users')
+          .update({ role: 'client' })
+          .is('role', null);
+
+        if (nullError && nullError.code !== 'PGRST116') throw nullError;
+
+        // Step 3: Restore ALL non-admin users to client (cohost_rate doesn't mean they're cohosts!)
+        log('🔧 Restoring ALL regular users to client role...');
+        const { error: restoreError } = await supabase
+          .from('users')
+          .update({ role: 'client' })
+          .eq('is_admin', false);
+
+        if (restoreError && restoreError.code !== 'PGRST116') throw restoreError;
+
+        // Step 4: Fix admins
+        log('🔧 Setting admin roles...');
+        const { error: adminError } = await supabase
+          .from('users')
+          .update({ role: 'admin' })
+          .eq('is_admin', true);
+
+        if (adminError && adminError.code !== 'PGRST116') throw adminError;
+
+
+        // Step 5: Verify restoration
+        log('\n📊 Verifying restoration...');
+        const { data: finalUsers, error: finalError } = await supabase
+          .from('users')
+          .select('name, role, is_admin, cohost_rate')
+          .order('name');
+
+        if (finalError) throw finalError;
+
+        const finalAdmins = finalUsers.filter(u => u.is_admin || u.role === 'admin');
+        const finalClients = finalUsers.filter(u => u.role === 'client');
+        const finalCohosts = finalUsers.filter(u => u.role === 'cohost');
+
+        log('\n✅ RESTORATION COMPLETE!');
+        log('================================');
+        log(`Final Counts:`);
+        log(`  Admins: ${finalAdmins.length}`);
+        log(`  Clients: ${finalClients.length}`);
+        log(`  Cohosts: ${finalCohosts.length}`);
+        log('');
+
+        if (finalClients.length > 0) {
+          log('All Restored Clients:');
+          finalClients.forEach(client => {
+            log(`  ✓ ${client.name}`);
+          });
+        }
+
+        log('\n✅ ALL CLIENTS RESTORED!');
+        log('✅ Check your admin panel - Client Overview should show all clients now');
+        log('✅ You can close this page');
+
+      } catch (error) {
+        log(`\n❌ ERROR: ${error.message}`, 'error');
+        log('\n⚠️ If this error persists, please run this SQL directly in Supabase SQL Editor:', 'error');
+        log(`
+-- Copy and paste this in Supabase SQL Editor:
+
+-- Fix NULL roles
+UPDATE users SET role = 'client' WHERE role IS NULL;
+
+-- Restore ALL non-admin users to client
+UPDATE users SET role = 'client' WHERE is_admin = false;
+
+-- Set admins correctly
+UPDATE users SET role = 'admin' WHERE is_admin = true;
+        `);
+      } finally {
+        restoreBtn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

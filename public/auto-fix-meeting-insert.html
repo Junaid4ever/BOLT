@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>Auto-Fix</title>
+<style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:system-ui;background:#0f172a;color:#fff;padding:40px;text-align:center}h1{color:#10b981;font-size:48px;margin-bottom:30px}
+.btn{background:#10b981;color:#000;padding:20px 40px;font-size:24px;font-weight:900;border:none;border-radius:12px;cursor:pointer;margin:20px;text-decoration:none;display:inline-block}
+.btn:hover{background:#059669}pre{background:#1e293b;padding:20px;border-radius:12px;text-align:left;max-width:800px;margin:20px auto;overflow:auto}</style>
+<script>
+window.onload=()=>{
+const sql=`-- Auto-generated fix for dp_member_price error
+-- Drop problematic triggers
+DROP TRIGGER IF EXISTS trigger_calculate_dues_on_screenshot ON meetings CASCADE;
+DROP TRIGGER IF EXISTS trigger_update_daily_dues_on_meeting ON meetings CASCADE;
+DROP TRIGGER IF EXISTS auto_calc_dues_on_meeting_update ON meetings CASCADE;
+
+-- Drop problematic functions
+DROP FUNCTION IF EXISTS calculate_dues_on_screenshot() CASCADE;
+DROP FUNCTION IF EXISTS update_daily_dues_on_meeting() CASCADE;
+
+-- Recreate function WITHOUT dp_member_price reference
+CREATE OR REPLACE FUNCTION update_daily_dues_on_meeting()
+RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER AS $$
+BEGIN
+  IF NEW.screenshot_url IS NOT NULL AND NEW.screenshot_url != '' THEN
+    IF NEW.attended = TRUE THEN
+      IF (OLD IS NULL OR OLD.screenshot_url IS NULL OR OLD.screenshot_url = '') THEN
+        PERFORM calculate_daily_dues_for_client(
+          NEW.client_name,
+          COALESCE(NEW.scheduled_date, CURRENT_DATE)
+        );
+      END IF;
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+-- Recreate trigger
+CREATE TRIGGER trigger_update_daily_dues_on_meeting
+  AFTER INSERT OR UPDATE OF screenshot_url, attended ON meetings
+  FOR EACH ROW
+  EXECUTE FUNCTION update_daily_dues_on_meeting();
+
+-- Fix status constraint
+ALTER TABLE meetings DROP CONSTRAINT IF EXISTS meetings_status_check;
+ALTER TABLE meetings ADD CONSTRAINT meetings_status_check
+  CHECK (status IS NULL OR status IN ('scheduled', 'active', 'completed', 'cancelled', 'attended', 'missed'));
+
+-- Test
+DO $$
+DECLARE test_id UUID;
+BEGIN
+  INSERT INTO meetings (meeting_name, meeting_id, password, hour, minutes, time_period, member_count, member_type, attended)
+  VALUES ('TEST', '999999999', 'test', 8, 0, 'PM', 1, 'indian', false) RETURNING id INTO test_id;
+  DELETE FROM meetings WHERE id = test_id;
+  RAISE NOTICE 'SUCCESS: Fix worked!';
+END $$;`;
+navigator.clipboard.writeText(sql);
+document.getElementById('status').textContent='✅ SQL Copied to Clipboard!';
+setTimeout(()=>{
+  window.open('https://supabase.com/dashboard/project/fkypxitgnfqbfplxokve/sql','_blank');
+},1000);
+};
+</script></head><body>
+<h1>Auto-Fix Meeting Insert</h1>
+<div id="status" style="font-size:24px;margin:20px;color:#10b981">Copying SQL...</div>
+<div style="margin:30px"><strong>SQL copied!</strong><br>Opening Supabase dashboard...<br><br>Paste (Ctrl+V) and click RUN</div>
+<a href="https://supabase.com/dashboard/project/fkypxitgnfqbfplxokve/sql" target="_blank" class="btn">OPEN SUPABASE SQL EDITOR</a>
+</body></html>

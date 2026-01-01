@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Fix Cohost Due on Meeting Delete</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:system-ui,sans-serif;background:linear-gradient(135deg,#0f172a 0%,#1e293b 100%);color:#fff;padding:20px;display:flex;align-items:center;justify-content:center;min-height:100vh}
+.container{background:#1e293b;border:4px solid#10b981;border-radius:24px;padding:60px;max-width:800px;box-shadow:0 25px 50px -12px rgba(0,0,0,0.9)}
+h1{color:#10b981;font-size:48px;margin-bottom:20px;text-align:center;text-shadow:0 0 20px rgba(16,185,129,0.5)}
+.step{background:#334155;padding:30px;border-radius:16px;margin:20px 0;border-left:6px solid#10b981;font-size:24px;font-weight:700;box-shadow:0 10px 15px -3px rgba(0,0,0,0.3)}
+.step-num{display:inline-block;background:#10b981;color:#000;width:50px;height:50px;border-radius:50%;text-align:center;line-height:50px;margin-right:15px;font-size:28px;font-weight:900}
+.btn{background:linear-gradient(135deg,#10b981,#059669);color:#fff;border:none;padding:25px 50px;border-radius:16px;font-size:28px;font-weight:900;cursor:pointer;width:100%;margin:15px 0;transition:all .3s;box-shadow:0 10px 25px rgba(16,185,129,0.4);text-decoration:none;display:block;text-align:center}
+.btn:hover{transform:translateY(-3px);box-shadow:0 15px 35px rgba(16,185,129,0.6)}
+.btn:active{transform:translateY(0)}
+.status{text-align:center;font-size:36px;margin:30px 0;padding:25px;background:#0f172a;border-radius:16px;font-weight:700}
+.copied{animation:flash .5s ease-in-out}
+@keyframes flash{0%,100%{background:#334155}50%{background:#10b981}}
+.emoji{font-size:64px;display:block;margin:20px 0}
+</style>
+</head>
+<body>
+<div class="container">
+<h1>Fix Cohost Dues</h1>
+<div class="status" id="status">
+<span class="emoji">📋</span>
+SQL Copied to Clipboard!
+</div>
+<div class="step">
+<span class="step-num">1</span>
+SQL already copied!
+</div>
+<div class="step">
+<span class="step-num">2</span>
+Click button below
+</div>
+<div class="step">
+<span class="step-num">3</span>
+Paste & RUN in dashboard
+</div>
+<a href="https://supabase.com/dashboard/project/fkypxitgnfqbfplxokve/sql" target="_blank" class="btn" onclick="openDashboard()">
+OPEN SUPABASE SQL EDITOR
+</a>
+<div style="text-align:center;margin-top:40px;font-size:18px;color:#94a3b8;line-height:1.8">
+<strong style="color:#fbbf24">What this does:</strong><br>
+When admin deletes subclient meeting<br>
+Cohost's due is also reduced automatically<br>
+<br>
+<strong style="color:#fbbf24">After opening:</strong><br>
+Press Ctrl+V (or Cmd+V on Mac) to paste<br>
+Click the green RUN button<br>
+Done! It's fixed forever!
+</div>
+</div>
+<textarea id="sql" style="position:absolute;left:-9999px">-- Fix: Automatically reduce cohost dues when subclient meeting is deleted
+
+-- Function to reduce cohost dues when their subclient's meeting is deleted
+CREATE OR REPLACE FUNCTION reduce_cohost_due_on_meeting_delete()
+RETURNS TRIGGER AS $$
+DECLARE
+  v_cohost_name TEXT;
+  v_cohost_rate DECIMAL;
+  v_cohost_earning DECIMAL;
+  v_current_due DECIMAL;
+  v_meeting_date DATE;
+BEGIN
+  -- Only process if meeting has a cohost
+  IF OLD.cohost_id IS NOT NULL THEN
+
+    -- Get cohost's name and rate
+    SELECT name, cohost_rate
+    INTO v_cohost_name, v_cohost_rate
+    FROM users
+    WHERE id = OLD.cohost_id;
+
+    -- Skip if cohost not found or rate is null
+    IF v_cohost_name IS NULL OR v_cohost_rate IS NULL THEN
+      RETURN OLD;
+    END IF;
+
+    -- Calculate cohost's earning from this meeting
+    v_cohost_earning := OLD.member_count * v_cohost_rate;
+
+    -- Use scheduled_date
+    v_meeting_date := OLD.scheduled_date;
+
+    -- Get cohost's current due for this date
+    SELECT amount INTO v_current_due
+    FROM daily_dues
+    WHERE client_name = v_cohost_name
+    AND date = v_meeting_date;
+
+    -- If due exists, reduce it
+    IF FOUND THEN
+      v_current_due := v_current_due - v_cohost_earning;
+
+      IF v_current_due <= 0 THEN
+        -- Delete due entry if it becomes zero or negative
+        DELETE FROM daily_dues
+        WHERE client_name = v_cohost_name
+        AND date = v_meeting_date;
+
+        RAISE NOTICE 'Deleted cohost due for % on %', v_cohost_name, v_meeting_date;
+      ELSE
+        -- Update the due
+        UPDATE daily_dues
+        SET
+          amount = v_current_due,
+          original_amount = GREATEST(0, original_amount - v_cohost_earning),
+          updated_at = NOW()
+        WHERE client_name = v_cohost_name
+        AND date = v_meeting_date;
+
+        RAISE NOTICE 'Reduced cohost due for % on %', v_cohost_name, v_meeting_date;
+      END IF;
+    END IF;
+  END IF;
+
+  RETURN OLD;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Drop existing trigger if any
+DROP TRIGGER IF EXISTS trigger_reduce_cohost_due_on_delete ON meetings;
+
+-- Create trigger on meeting deletion
+CREATE TRIGGER trigger_reduce_cohost_due_on_delete
+  AFTER DELETE ON meetings
+  FOR EACH ROW
+  EXECUTE FUNCTION reduce_cohost_due_on_meeting_delete();
+
+-- Also manually fix Binod's current due (subtract 100 members worth)
+DO $$
+DECLARE
+  v_binod_rate DECIMAL;
+  v_amount_to_subtract DECIMAL;
+  v_current_due DECIMAL;
+BEGIN
+  -- Get Binod's cohost rate
+  SELECT cohost_rate INTO v_binod_rate
+  FROM users
+  WHERE name = 'Binod';
+
+  IF v_binod_rate IS NOT NULL THEN
+    -- Calculate amount (100 members × rate)
+    v_amount_to_subtract := 100 * v_binod_rate;
+
+    -- Get today's due
+    SELECT amount INTO v_current_due
+    FROM daily_dues
+    WHERE client_name = 'Binod'
+    AND date = CURRENT_DATE;
+
+    IF FOUND THEN
+      v_current_due := v_current_due - v_amount_to_subtract;
+
+      IF v_current_due <= 0 THEN
+        DELETE FROM daily_dues
+        WHERE client_name = 'Binod'
+        AND date = CURRENT_DATE;
+
+        RAISE NOTICE 'Deleted Binod due (became zero)';
+      ELSE
+        UPDATE daily_dues
+        SET
+          amount = v_current_due,
+          original_amount = GREATEST(0, original_amount - v_amount_to_subtract),
+          updated_at = NOW()
+        WHERE client_name = 'Binod'
+        AND date = CURRENT_DATE;
+
+        RAISE NOTICE 'Updated Binod due: subtracted ₹%', v_amount_to_subtract;
+      END IF;
+    END IF;
+  END IF;
+END $$;</textarea>
+<script>
+window.onload=function(){
+const t=document.getElementById('sql');
+t.select();
+document.execCommand('copy');
+document.getElementById('status').classList.add('copied');
+setTimeout(()=>document.getElementById('status').classList.remove('copied'),500)
+};
+function openDashboard(){
+document.getElementById('status').innerHTML='<span class="emoji">✅</span>Dashboard Opened!<br><span style="font-size:20px;color:#94a3b8">Paste SQL and click RUN</span>';
+}
+</script>
+</body>
+</html>

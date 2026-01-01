@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fix Vinod Dues - Screenshot Required</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    body { font-family: system-ui; padding: 40px; background: #1a1a2e; color: #eee; }
+    .container { max-width: 800px; margin: 0 auto; }
+    h1 { color: #4ade80; }
+    .status { padding: 15px; border-radius: 8px; margin: 10px 0; }
+    .success { background: #065f46; }
+    .error { background: #7f1d1d; }
+    .info { background: #1e3a5f; }
+    button { background: #8b5cf6; color: white; border: none; padding: 15px 30px; font-size: 18px; border-radius: 8px; cursor: pointer; margin: 10px 5px; }
+    button:hover { background: #7c3aed; }
+    button:disabled { background: #444; cursor: not-allowed; }
+    pre { background: #0f0f1a; padding: 15px; border-radius: 8px; overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+    th, td { border: 1px solid #333; padding: 10px; text-align: left; }
+    th { background: #1e3a5f; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Fix Vinod Dues (Screenshot Required)</h1>
+    <p>This will update the dues calculation to ONLY count meetings with screenshots uploaded.</p>
+
+    <button onclick="fixDuesFunction()">1. Update Function</button>
+    <button onclick="recalculateVinodDues()">2. Recalculate Vinod Dues</button>
+    <button onclick="checkVinodDues()">3. Check Current Dues</button>
+    <button onclick="checkMeetingsWithoutScreenshots()">4. Check Meetings Without Screenshots</button>
+
+    <div id="output"></div>
+  </div>
+
+  <script>
+    const SUPABASE_URL = 'https://fkypxitgnfqbfplxokve.supabase.co';
+    const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZreXB4aXRnbmZxYmZwbHhva3ZlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA2MjE0ODksImV4cCI6MjA3NjE5NzQ4OX0.Swk4AqJrRBNnEIdSGS3QjfU-okNKN2LGSL43Ha1h4Cc';
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    const output = document.getElementById('output');
+
+    function log(msg, type = 'info') {
+      output.innerHTML += `<div class="status ${type}">${msg}</div>`;
+    }
+
+    async function fixDuesFunction() {
+      output.innerHTML = '';
+      log('Updating calculate_daily_dues_for_client function...', 'info');
+
+      const sql = `
+        CREATE OR REPLACE FUNCTION public.calculate_daily_dues_for_client(p_client_name text, p_date date)
+        RETURNS void
+        LANGUAGE plpgsql
+        SECURITY DEFINER
+        AS $func$
+        DECLARE
+          v_user_id UUID;
+          v_indian_rate NUMERIC;
+          v_dp_rate NUMERIC;
+          v_total_amount NUMERIC := 0;
+          v_meeting_count INTEGER := 0;
+          v_meeting RECORD;
+        BEGIN
+          SELECT id, price_per_member, price_per_dp_member
+          INTO v_user_id, v_indian_rate, v_dp_rate
+          FROM users
+          WHERE name = p_client_name;
+
+          IF v_user_id IS NULL THEN
+            RETURN;
+          END IF;
+
+          FOR v_meeting IN
+            SELECT member_count, member_type
+            FROM meetings
+            WHERE client_name = p_client_name
+            AND scheduled_date = p_date
+            AND attended = TRUE
+            AND screenshot_url IS NOT NULL
+            AND screenshot_url != ''
+          LOOP
+            v_meeting_count := v_meeting_count + 1;
+            IF v_meeting.member_type = 'dp' THEN
+              v_total_amount := v_total_amount + (COALESCE(v_meeting.member_count, 0) * v_dp_rate);
+            ELSE
+              v_total_amount := v_total_amount + (COALESCE(v_meeting.member_count, 0) * v_indian_rate);
+            END IF;
+          END LOOP;
+
+          INSERT INTO daily_dues (client_id, client_name, date, amount, meeting_count)
+          VALUES (v_user_id, p_client_name, p_date, v_total_amount, v_meeting_count)
+          ON CONFLICT (client_id, date)
+          DO UPDATE SET
+            amount = EXCLUDED.amount,
+            meeting_count = EXCLUDED.meeting_count;
+        END;
+        $func$;
+      `;
+
+      try {
+        const { error } = await supabase.rpc('exec_sql', { sql_query: sql });
+        if (error) {
+          log('Error: ' + error.message + '<br>Note: You may need to run this SQL directly in Supabase Dashboard', 'error');
+          log('<pre>' + sql + '</pre>', 'info');
+        } else {
+          log('Function updated successfully!', 'success');
+        }
+      } catch (err) {
+        log('Error: ' + err.message + '<br>Copy this SQL and run in Supabase Dashboard SQL Editor:', 'error');
+        log('<pre>' + sql + '</pre>', 'info');
+      }
+    }
+
+    async function recalculateVinodDues() {
+      log('Recalculating Vinod dues...', 'info');
+
+      const today = new Date();
+      const dates = [];
+      for (let i = 0; i < 30; i++) {
+        const d = new Date(today);
+        d.setDate(d.getDate() - i);
+        dates.push(d.toISOString().split('T')[0]);
+      }
+
+      for (const date of dates) {
+        try {
+          const { error } = await supabase.rpc('calculate_daily_dues_for_client', {
+            p_client_name: 'Vinod',
+            p_date: date
+          });
+          if (error) {
+            log(`Error for ${date}: ${error.message}`, 'error');
+          }
+        } catch (err) {
+          log(`Error for ${date}: ${err.message}`, 'error');
+        }
+      }
+
+      log('Recalculation complete! Click "Check Current Dues" to see results.', 'success');
+    }
+
+    async function checkVinodDues() {
+      log('Fetching Vinod dues...', 'info');
+
+      const { data, error } = await supabase
+        .from('daily_dues')
+        .select('date, amount, meeting_count')
+        .eq('client_name', 'Vinod')
+        .gte('date', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0])
+        .order('date', { ascending: false });
+
+      if (error) {
+        log('Error: ' + error.message, 'error');
+        return;
+      }
+
+      let html = '<h3>Vinod Dues (Last 7 Days)</h3><table><tr><th>Date</th><th>Amount</th><th>Meetings</th></tr>';
+      let total = 0;
+      data.forEach(d => {
+        html += `<tr><td>${d.date}</td><td>Rs.${d.amount}</td><td>${d.meeting_count}</td></tr>`;
+        total += Number(d.amount);
+      });
+      html += `<tr style="background:#1e3a5f;font-weight:bold"><td>TOTAL</td><td>Rs.${total}</td><td>-</td></tr>`;
+      html += '</table>';
+
+      log(html, 'success');
+    }
+
+    async function checkMeetingsWithoutScreenshots() {
+      log('Checking meetings without screenshots...', 'info');
+
+      const { data, error } = await supabase
+        .from('meetings')
+        .select('meeting_name, member_count, scheduled_date, attended, screenshot_url')
+        .eq('client_name', 'Vinod')
+        .gte('scheduled_date', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0])
+        .order('scheduled_date', { ascending: false });
+
+      if (error) {
+        log('Error: ' + error.message, 'error');
+        return;
+      }
+
+      const withoutScreenshot = data.filter(m => !m.screenshot_url || m.screenshot_url === '');
+      const withScreenshot = data.filter(m => m.screenshot_url && m.screenshot_url !== '');
+
+      let html = '<h3>Meetings WITHOUT Screenshots (These should NOT be in dues)</h3>';
+      if (withoutScreenshot.length === 0) {
+        html += '<p>None found - all meetings have screenshots!</p>';
+      } else {
+        html += '<table><tr><th>Name</th><th>Members</th><th>Date</th><th>Attended</th></tr>';
+        withoutScreenshot.forEach(m => {
+          html += `<tr><td>${m.meeting_name}</td><td>${m.member_count}</td><td>${m.scheduled_date}</td><td>${m.attended ? 'Yes' : 'No'}</td></tr>`;
+        });
+        html += '</table>';
+      }
+
+      html += '<h3>Meetings WITH Screenshots (These SHOULD be in dues)</h3>';
+      html += '<table><tr><th>Name</th><th>Members</th><th>Date</th><th>Attended</th></tr>';
+      withScreenshot.forEach(m => {
+        html += `<tr><td>${m.meeting_name}</td><td>${m.member_count}</td><td>${m.scheduled_date}</td><td>${m.attended ? 'Yes' : 'No'}</td></tr>`;
+      });
+      html += '</table>';
+
+      log(html, 'info');
+    }
+  </script>
+</body>
+</html>

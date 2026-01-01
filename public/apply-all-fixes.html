@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Apply All Fixes - Meeting Manager</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .container {
+      background: white;
+      border-radius: 20px;
+      padding: 40px;
+      max-width: 800px;
+      width: 100%;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    }
+
+    h1 {
+      color: #667eea;
+      margin-bottom: 10px;
+      font-size: 2em;
+    }
+
+    .subtitle {
+      color: #666;
+      margin-bottom: 30px;
+      font-size: 1.1em;
+    }
+
+    .fixes-list {
+      background: #f8f9fa;
+      border-radius: 10px;
+      padding: 20px;
+      margin-bottom: 30px;
+    }
+
+    .fixes-list h3 {
+      color: #667eea;
+      margin-bottom: 15px;
+    }
+
+    .fix-item {
+      margin-bottom: 15px;
+      padding: 10px;
+      background: white;
+      border-radius: 5px;
+      border-left: 4px solid #667eea;
+    }
+
+    .fix-item h4 {
+      color: #333;
+      margin-bottom: 5px;
+    }
+
+    .fix-item p {
+      color: #666;
+      font-size: 0.9em;
+      margin-left: 10px;
+    }
+
+    button {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border: none;
+      padding: 15px 30px;
+      border-radius: 10px;
+      font-size: 1.1em;
+      cursor: pointer;
+      width: 100%;
+      font-weight: bold;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+
+    button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+    }
+
+    button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .status {
+      margin-top: 20px;
+      padding: 20px;
+      border-radius: 10px;
+      display: none;
+    }
+
+    .status.show {
+      display: block;
+    }
+
+    .status.loading {
+      background: #fff3cd;
+      border-left: 4px solid #ffc107;
+      color: #856404;
+    }
+
+    .status.success {
+      background: #d4edda;
+      border-left: 4px solid #28a745;
+      color: #155724;
+    }
+
+    .status.error {
+      background: #f8d7da;
+      border-left: 4px solid #dc3545;
+      color: #721c24;
+    }
+
+    .results {
+      margin-top: 15px;
+      max-height: 400px;
+      overflow-y: auto;
+      background: rgba(255, 255, 255, 0.5);
+      padding: 15px;
+      border-radius: 5px;
+    }
+
+    .result-item {
+      padding: 10px;
+      margin-bottom: 10px;
+      border-radius: 5px;
+      font-size: 0.9em;
+    }
+
+    .result-item.success {
+      background: rgba(40, 167, 69, 0.1);
+      border-left: 3px solid #28a745;
+    }
+
+    .result-item.error {
+      background: rgba(220, 53, 69, 0.1);
+      border-left: 3px solid #dc3545;
+    }
+
+    .spinner {
+      border: 3px solid #f3f3f3;
+      border-top: 3px solid #667eea;
+      border-radius: 50%;
+      width: 30px;
+      height: 30px;
+      animation: spin 1s linear infinite;
+      display: inline-block;
+      margin-right: 10px;
+      vertical-align: middle;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    .summary {
+      display: flex;
+      justify-content: space-around;
+      margin-top: 20px;
+      padding: 15px;
+      background: rgba(255, 255, 255, 0.5);
+      border-radius: 5px;
+    }
+
+    .summary-item {
+      text-align: center;
+    }
+
+    .summary-item .number {
+      font-size: 2em;
+      font-weight: bold;
+      color: #667eea;
+    }
+
+    .summary-item .label {
+      font-size: 0.9em;
+      color: #666;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Apply All Fixes</h1>
+    <p class="subtitle">Fix Selected Days and Status Issues - December 22, 2025</p>
+
+    <div class="fixes-list">
+      <h3>🔧 What will be fixed:</h3>
+
+      <div class="fix-item">
+        <h4>1. Status Constraint Update</h4>
+        <p>• Adds "not_live" status to meetings table</p>
+        <p>• Fixes "Mark as Not Live" button error in admin panel</p>
+      </div>
+
+      <div class="fix-item">
+        <h4>2. ensure_client_recurring_meetings Function</h4>
+        <p>• Adds validation for selected_days before creating meetings</p>
+        <p>• Only creates meetings on days specified in selected_days array</p>
+        <p>• Fixes issues like Prashant Blockista creating on wrong days</p>
+      </div>
+
+      <div class="fix-item">
+        <h4>3. create_todays_recurring_meetings Function</h4>
+        <p>• Adds selected_days check for automated meeting creation</p>
+        <p>• Ensures midnight auto-creation respects day selection</p>
+        <p>• Prevents recurring meetings from appearing on unselected days</p>
+      </div>
+    </div>
+
+    <button id="applyBtn" onclick="applyFixes()">
+      🚀 Apply All Fixes Now
+    </button>
+
+    <div id="status" class="status"></div>
+  </div>
+
+  <script>
+    // Get Supabase URL and anon key from current page or environment
+    const SUPABASE_URL = window.location.hostname.includes('localhost')
+      ? 'https://fkypxitgnfqbfplxokve.supabase.co'
+      : window.location.origin;
+
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZreXB4aXRnbmZxYmZwbHhva3ZlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA2MjE0ODksImV4cCI6MjA3NjE5NzQ4OX0.Swk4AqJrRBNnEIdSGS3QjfU-okNKN2LGSL43Ha1h4Cc';
+
+    const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    async function applyFixes() {
+      const btn = document.getElementById('applyBtn');
+      const status = document.getElementById('status');
+
+      btn.disabled = true;
+      status.className = 'status loading show';
+      status.innerHTML = '<div class="spinner"></div><strong>Applying fixes...</strong><p>Please wait while we update your database...</p>';
+
+      try {
+        // Call the edge function
+        const functionUrl = `${SUPABASE_URL}/functions/v1/apply-all-fixes`;
+
+        const response = await fetch(functionUrl, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+            'Content-Type': 'application/json'
+          }
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+          // Success!
+          status.className = 'status success show';
+
+          let html = '<strong>✅ All Fixes Applied Successfully!</strong>';
+
+          if (data.summary) {
+            html += '<div class="summary">';
+            html += `<div class="summary-item">
+              <div class="number">${data.summary.total}</div>
+              <div class="label">Total</div>
+            </div>`;
+            html += `<div class="summary-item">
+              <div class="number" style="color: #28a745">${data.summary.successful}</div>
+              <div class="label">Successful</div>
+            </div>`;
+            html += `<div class="summary-item">
+              <div class="number" style="color: #dc3545">${data.summary.failed}</div>
+              <div class="label">Failed</div>
+            </div>`;
+            html += '</div>';
+          }
+
+          html += '<div style="margin-top: 20px;">';
+          html += '<h4>🎉 What\'s Now Working:</h4>';
+          html += '<ul style="margin-left: 20px; margin-top: 10px;">';
+          html += '<li>✅ "Mark as Not Live" button in admin panel</li>';
+          html += '<li>✅ Recurring meetings only create on selected days</li>';
+          html += '<li>✅ No more wrong day meetings (like Prashant Blockista issue)</li>';
+          html += '<li>✅ Midnight auto-creation respects day selection</li>';
+          html += '</ul>';
+          html += '</div>';
+
+          if (data.results && data.results.length > 0) {
+            html += '<div class="results">';
+            html += '<h4>Detailed Results:</h4>';
+            data.results.forEach((result, i) => {
+              const resultClass = result.success ? 'success' : 'error';
+              const icon = result.success ? '✅' : '❌';
+              html += `<div class="result-item ${resultClass}">`;
+              html += `<strong>${icon} Statement ${i + 1}</strong><br>`;
+              html += `${result.statement}`;
+              if (result.error) {
+                html += `<br><small>Error: ${result.error}</small>`;
+              }
+              html += '</div>';
+            });
+            html += '</div>';
+          }
+
+          status.innerHTML = html;
+
+        } else {
+          // Partial success or failure
+          status.className = 'status error show';
+          let html = `<strong>⚠️ ${data.message || 'Some fixes failed'}</strong>`;
+
+          if (data.summary) {
+            html += '<div class="summary">';
+            html += `<div class="summary-item">
+              <div class="number">${data.summary.total}</div>
+              <div class="label">Total</div>
+            </div>`;
+            html += `<div class="summary-item">
+              <div class="number" style="color: #28a745">${data.summary.successful}</div>
+              <div class="label">Successful</div>
+            </div>`;
+            html += `<div class="summary-item">
+              <div class="number" style="color: #dc3545">${data.summary.failed}</div>
+              <div class="label">Failed</div>
+            </div>`;
+            html += '</div>';
+          }
+
+          if (data.error) {
+            html += `<p style="margin-top: 15px;">Error: ${data.error}</p>`;
+          }
+
+          if (data.results) {
+            html += '<div class="results">';
+            html += '<h4>Results:</h4>';
+            data.results.forEach((result, i) => {
+              const resultClass = result.success ? 'success' : 'error';
+              const icon = result.success ? '✅' : '❌';
+              html += `<div class="result-item ${resultClass}">`;
+              html += `<strong>${icon} Statement ${i + 1}</strong><br>`;
+              html += `${result.statement}`;
+              if (result.error) {
+                html += `<br><small>Error: ${result.error}</small>`;
+              }
+              html += '</div>';
+            });
+            html += '</div>';
+          }
+
+          status.innerHTML = html;
+        }
+
+        btn.disabled = false;
+        btn.textContent = '✅ Fixes Applied - Click to Reapply';
+
+      } catch (error) {
+        status.className = 'status error show';
+        status.innerHTML = `
+          <strong>❌ Error Calling Edge Function</strong>
+          <p>${error.message}</p>
+          <div style="margin-top: 15px; padding: 15px; background: rgba(255,255,255,0.5); border-radius: 5px;">
+            <h4>⚠️ Edge Function Not Deployed</h4>
+            <p>The apply-all-fixes edge function needs to be deployed first.</p>
+            <br>
+            <h4>📝 How to Deploy:</h4>
+            <ol style="margin-left: 20px; margin-top: 10px;">
+              <li>Go to <a href="https://supabase.com/dashboard/project/fkypxitgnfqbfplxokve/functions" target="_blank">Supabase Functions</a></li>
+              <li>Click "New Function" or "Deploy function"</li>
+              <li>Name it: <code>apply-all-fixes</code></li>
+              <li>Copy the code from: <code>supabase/functions/apply-all-fixes/index.ts</code></li>
+              <li>Click "Deploy"</li>
+              <li>Come back here and click the button again</li>
+            </ol>
+            <br>
+            <h4>OR - Manual SQL:</h4>
+            <ol style="margin-left: 20px; margin-top: 10px;">
+              <li>Go to <a href="https://supabase.com/dashboard/project/fkypxitgnfqbfplxokve/sql/new" target="_blank">Supabase SQL Editor</a></li>
+              <li>Copy all SQL from: <code>supabase/migrations/20251222150000_fix_selected_days_and_status.sql</code></li>
+              <li>Run it directly</li>
+            </ol>
+          </div>
+        `;
+        btn.disabled = false;
+      }
+    }
+  </script>
+</body>
+</html>

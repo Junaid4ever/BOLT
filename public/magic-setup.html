@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Co-Host Magic Setup</title>
+<style>
+body{margin:0;padding:40px;font-family:system-ui;background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;text-align:center;min-height:100vh;display:flex;align-items:center;justify-content:center;flex-direction:column}
+h1{font-size:48px;margin:0 0 20px 0}
+.status{font-size:24px;margin:20px 0;min-height:60px}
+.code{background:#1a1a1a;color:#4ade80;padding:20px;border-radius:10px;font-family:monospace;text-align:left;max-width:800px;margin:20px auto;display:none;max-height:400px;overflow:auto}
+.btn{background:#fff;color:#667eea;border:none;padding:15px 40px;font-size:20px;border-radius:10px;cursor:pointer;font-weight:700;margin:10px;text-decoration:none;display:inline-block}
+.spinner{border:8px solid rgba(255,255,255,0.3);border-top:8px solid #fff;border-radius:50%;width:80px;height:80px;animation:spin 1s linear infinite;margin:20px auto}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<div>
+<h1>🪄 Co-Host Magic Setup</h1>
+<div id="status" class="status">
+<div class="spinner"></div>
+Setting up automatically...
+</div>
+<div id="code" class="code"></div>
+<a href="/" class="btn" id="done" style="display:none">✅ DONE - GO TO DASHBOARD</a>
+<button class="btn" id="manual" onclick="showManual()" style="display:none">Show Manual Steps</button>
+</div>
+
+<script type="module">
+const SQL = `ALTER TABLE users ADD COLUMN IF NOT EXISTS is_cohost BOOLEAN DEFAULT false;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS parent_user_id uuid REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS cohost_prefix TEXT UNIQUE;
+
+CREATE TABLE IF NOT EXISTS cohost_requests (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+  requested_at timestamptz DEFAULT now(),
+  admin_response_at timestamptz,
+  admin_response_by TEXT,
+  UNIQUE(user_id, requested_at)
+);
+
+ALTER TABLE cohost_requests ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Users can view their own requests" ON cohost_requests;
+DROP POLICY IF EXISTS "Users can insert their own requests" ON cohost_requests;
+DROP POLICY IF EXISTS "Only admins can update requests" ON cohost_requests;
+
+CREATE POLICY "Users can view their own requests" ON cohost_requests FOR SELECT USING (true);
+CREATE POLICY "Users can insert their own requests" ON cohost_requests FOR INSERT WITH CHECK (true);
+CREATE POLICY "Only admins can update requests" ON cohost_requests FOR UPDATE USING (true);
+
+CREATE INDEX IF NOT EXISTS idx_cohost_requests_user_id ON cohost_requests(user_id);
+CREATE INDEX IF NOT EXISTS idx_cohost_requests_status ON cohost_requests(status);
+CREATE INDEX IF NOT EXISTS idx_users_parent_user_id ON users(parent_user_id);
+CREATE INDEX IF NOT EXISTS idx_users_cohost_prefix ON users(cohost_prefix);
+CREATE INDEX IF NOT EXISTS idx_users_is_cohost ON users(is_cohost);`;
+
+window.showManual = () => {
+  document.getElementById('code').style.display = 'block';
+  document.getElementById('code').innerHTML = `
+<strong style="color:#fff">Copy this SQL and paste in Supabase:</strong><br><br>
+${SQL.replace(/\n/g, '<br>')}
+<br><br>
+<strong style="color:#fff">Link:</strong> <a href="https://supabase.com/dashboard/project/fkypxitgnfqbfplxokve/sql" target="_blank" style="color:#4ade80">Open Supabase SQL Editor</a>
+  `;
+};
+
+import {createClient} from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
+
+const supabase = createClient(
+  'https://fkypxitgnfqbfplxokve.supabase.co',
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZreXB4aXRnbmZxYmZwbHhva3ZlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA2MjE0ODksImV4cCI6MjA3NjE5NzQ4OX0.Swk4AqJrRBNnEIdSGS3QjfU-okNKN2LGSL43Ha1h4Cc'
+);
+
+async function setup() {
+  const status = document.getElementById('status');
+  const done = document.getElementById('done');
+  const manual = document.getElementById('manual');
+
+  try {
+    status.innerHTML = '<div class="spinner"></div>Checking if already set up...';
+
+    const {error: checkError} = await supabase.from('cohost_requests').select('id').limit(1);
+
+    if (!checkError || !checkError.message.includes('does not exist')) {
+      status.innerHTML = '✅ Already Set Up!<br><small>Co-Host system is ready to use</small>';
+      done.style.display = 'inline-block';
+      return;
+    }
+
+    status.innerHTML = '<div class="spinner"></div>Attempting automatic setup...';
+    await new Promise(r => setTimeout(r, 1000));
+
+    const {error: rpcError} = await supabase.rpc('exec_sql', {sql_query: SQL});
+
+    if (rpcError) {
+      status.innerHTML = '⚠️ Manual Step Needed<br><small>Click button below for instructions</small>';
+      manual.style.display = 'inline-block';
+      showManual();
+      return;
+    }
+
+    status.innerHTML = '✅ Setup Complete!<br><small>Co-Host system activated successfully</small>';
+    done.style.display = 'inline-block';
+
+  } catch (err) {
+    status.innerHTML = '⚠️ Manual Step Needed<br><small>Click button below</small>';
+    manual.style.display = 'inline-block';
+  }
+}
+
+window.addEventListener('load', setup);
+</script>
+</body>
+</html>

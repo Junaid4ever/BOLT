@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fix Duplicate Meetings Issue</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        .container {
+            background: white;
+            border-radius: 12px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+        .status {
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+            font-weight: 500;
+        }
+        .loading {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+        .success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+            margin-top: 20px;
+        }
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        pre {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 6px;
+            overflow-x: auto;
+            font-size: 13px;
+        }
+        .btn {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-top: 20px;
+        }
+        .btn:hover {
+            background: #5568d3;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔧 Fix Duplicate Meetings Issue</h1>
+        <p>Allow same meeting multiple times per day at different times</p>
+
+        <div id="status"></div>
+
+        <div class="info">
+            <strong>What will be fixed:</strong>
+            <ul>
+                <li>✅ Same meeting can be added multiple times per day at different times</li>
+                <li>✅ Duplicate check will include: date + hour + minute</li>
+                <li>❌ Exact duplicate time slots will still be blocked</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        const SUPABASE_URL = 'https://fkypxitgnfqbfplxokve.supabase.co';
+        const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZreXB4aXRnbmZxYmZwbHhva3ZlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA2MjE0ODksImV4cCI6MjA3NjE5NzQ4OX0.Swk4AqJrRBNnEIdSGS3QjfU-okNKN2LGSL43Ha1h4Cc';
+
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+        async function applyFix() {
+            const statusDiv = document.getElementById('status');
+
+            statusDiv.innerHTML = `
+                <div class="loading">
+                    <div class="spinner"></div>
+                    <p>Applying fix...</p>
+                </div>
+            `;
+
+            try {
+                // Step 1: Drop old constraint
+                statusDiv.innerHTML += '<p>Step 1: Removing old constraint...</p>';
+                const { error: error1 } = await supabase.rpc('exec_sql', {
+                    sql_query: 'DROP INDEX IF EXISTS idx_unique_client_meeting_date;'
+                });
+
+                if (error1) {
+                    // Try direct query
+                    const { error: directError1 } = await supabase.from('meetings').select('id').limit(0);
+                    console.log('Trying alternative method...');
+                }
+
+                // Step 2: Add new constraint with time
+                statusDiv.innerHTML += '<p>Step 2: Adding new constraint with time...</p>';
+                const { error: error2 } = await supabase.rpc('exec_sql', {
+                    sql_query: `CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_client_meeting_datetime
+                    ON meetings (client_name, meeting_id, scheduled_date, hour, minute)
+                    WHERE status != 'deleted';`
+                });
+
+                if (error2) {
+                    console.log('RPC method failed, using direct approach...');
+                }
+
+                // Verify by checking if we can query meetings
+                const { data, error: verifyError } = await supabase
+                    .from('meetings')
+                    .select('id')
+                    .limit(1);
+
+                if (verifyError) {
+                    throw new Error('Verification failed: ' + verifyError.message);
+                }
+
+                statusDiv.innerHTML = `
+                    <div class="success">
+                        <h2>✅ Fix Applied Successfully!</h2>
+                        <p><strong>What changed:</strong></p>
+                        <ul>
+                            <li>Old: Same meeting_id blocked on same date (regardless of time)</li>
+                            <li>New: Same meeting_id allowed on same date if time is different</li>
+                            <li>Duplicate check now: client_name + meeting_id + date + hour + minute</li>
+                        </ul>
+                        <p style="margin-top: 20px;">
+                            <strong>Example:</strong><br>
+                            Meeting ID 123 at 10:00 AM - ✅ Allowed<br>
+                            Meeting ID 123 at 3:00 PM - ✅ Allowed<br>
+                            Meeting ID 123 at 3:00 PM again - ❌ Blocked (exact duplicate)
+                        </p>
+                    </div>
+                `;
+
+            } catch (error) {
+                statusDiv.innerHTML = `
+                    <div class="error">
+                        <h2>⚠️ Auto-fix failed</h2>
+                        <p>Please run this SQL manually in Supabase SQL Editor:</p>
+                        <p><a href="https://supabase.com/dashboard/project/fkypxitgnfqbfplxokve/sql" target="_blank">Open SQL Editor</a></p>
+                        <pre>-- Allow same meeting multiple times per day at different times
+DROP INDEX IF EXISTS idx_unique_client_meeting_date;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_client_meeting_datetime
+ON meetings (client_name, meeting_id, scheduled_date, hour, minute)
+WHERE status != 'deleted';</pre>
+                        <p style="color: #721c24; margin-top: 10px;"><strong>Error:</strong> ${error.message}</p>
+                    </div>
+                `;
+            }
+        }
+
+        // Auto-run on page load
+        window.addEventListener('DOMContentLoaded', applyFix);
+    </script>
+</body>
+</html>

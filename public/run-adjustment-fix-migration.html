@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fix Adjustment Amount Error</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .container {
+      background: white;
+      border-radius: 20px;
+      padding: 40px;
+      max-width: 800px;
+      width: 100%;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+    }
+    h1 {
+      color: #667eea;
+      margin-bottom: 10px;
+      font-size: 28px;
+    }
+    p {
+      color: #666;
+      margin-bottom: 30px;
+      line-height: 1.6;
+    }
+    .sql-box {
+      background: #f7f7f7;
+      border: 2px solid #e0e0e0;
+      border-radius: 10px;
+      padding: 20px;
+      margin-bottom: 30px;
+      font-family: 'Courier New', monospace;
+      font-size: 13px;
+      max-height: 400px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+    }
+    .button {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border: none;
+      padding: 15px 40px;
+      border-radius: 10px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.2s, box-shadow 0.2s;
+      width: 100%;
+    }
+    .button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 25px rgba(102, 126, 234, 0.4);
+    }
+    .button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+    }
+    .status {
+      margin-top: 20px;
+      padding: 15px;
+      border-radius: 10px;
+      font-weight: 500;
+    }
+    .status.loading {
+      background: #fff3cd;
+      color: #856404;
+      border: 2px solid #ffc107;
+    }
+    .status.success {
+      background: #d4edda;
+      color: #155724;
+      border: 2px solid #28a745;
+    }
+    .status.error {
+      background: #f8d7da;
+      color: #721c24;
+      border: 2px solid #dc3545;
+    }
+    .manual-instructions {
+      background: #e7f3ff;
+      border-left: 4px solid #2196F3;
+      padding: 20px;
+      margin-top: 20px;
+      border-radius: 8px;
+    }
+    .manual-instructions h3 {
+      color: #1976D2;
+      margin-bottom: 10px;
+    }
+    .manual-instructions ol {
+      margin-left: 20px;
+      color: #555;
+    }
+    .manual-instructions li {
+      margin: 8px 0;
+      line-height: 1.6;
+    }
+    .manual-instructions a {
+      color: #2196F3;
+      font-weight: 600;
+      text-decoration: none;
+    }
+    .manual-instructions a:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🔧 Fix Adjustment Amount Error</h1>
+    <p>This migration fixes the "adjustment_amount does not exist" error when sub-clients try to add meetings. Click the button below to run the migration automatically.</p>
+
+    <div class="sql-box" id="sqlDisplay"></div>
+
+    <button class="button" id="runButton" onclick="runMigration()">
+      Run Migration Now
+    </button>
+
+    <div id="status"></div>
+
+    <div class="manual-instructions">
+      <h3>📋 Manual Instructions (if automatic fails)</h3>
+      <ol>
+        <li>Go to <a href="https://supabase.com/dashboard/project/fkypxitgnfqbfplxokve/sql" target="_blank">Supabase SQL Editor</a></li>
+        <li>Copy the SQL from the box above</li>
+        <li>Paste it in the SQL Editor</li>
+        <li>Click "Run" button</li>
+        <li>Refresh this page and click the button again to verify</li>
+      </ol>
+    </div>
+  </div>
+
+  <script>
+    const { createClient } = supabase;
+
+    const SUPABASE_URL = 'https://fkypxitgnfqbfplxokve.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZreXB4aXRnbmZxYmZwbHhva3ZlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA2MjE0ODksImV4cCI6MjA3NjE5NzQ4OX0.Swk4AqJrRBNnEIdSGS3QjfU-okNKN2LGSL43Ha1h4Cc';
+
+    const supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    const SQL = `/*
+  # Fix adjustment_amount Error
+
+  1. Problem
+    - Error occurs when sub-clients try to add meetings
+    - Column "adjustment_amount" does not exist
+    - Need to ensure all required columns exist
+
+  2. Solution
+    - Verify daily_dues table has correct columns
+    - Ensure all triggers reference correct column names
+*/
+
+-- Ensure daily_dues has all required columns
+DO $$
+BEGIN
+  -- Check if advance_adjustment exists (should be there)
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'daily_dues' AND column_name = 'advance_adjustment'
+  ) THEN
+    ALTER TABLE daily_dues ADD COLUMN advance_adjustment numeric(10,2) DEFAULT 0;
+  END IF;
+
+  -- Check if original_amount exists (should be there)
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'daily_dues' AND column_name = 'original_amount'
+  ) THEN
+    ALTER TABLE daily_dues ADD COLUMN original_amount numeric(10,2) DEFAULT 0;
+  END IF;
+END $$;
+
+-- Drop and recreate the calculate function to ensure it uses correct columns
+CREATE OR REPLACE FUNCTION calculate_daily_dues_for_client(p_client_name TEXT, p_date DATE)
+RETURNS void
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_client_id UUID;
+  v_indian_rate NUMERIC;
+  v_dp_rate NUMERIC;
+  v_total_amount NUMERIC := 0;
+  v_meeting_count INTEGER := 0;
+  v_advance_id UUID;
+  v_remaining_advance NUMERIC := 0;
+  v_advance_to_use NUMERIC := 0;
+BEGIN
+  -- Get client info
+  SELECT id, price_per_member, price_per_dp_member
+  INTO v_client_id, v_indian_rate, v_dp_rate
+  FROM users
+  WHERE name = p_client_name;
+
+  IF v_client_id IS NULL THEN
+    RETURN;
+  END IF;
+
+  -- Calculate total for attended meetings on this date
+  SELECT
+    COALESCE(SUM(
+      CASE
+        WHEN m.member_type = 'dp' THEN m.member_count * v_dp_rate
+        ELSE m.member_count * v_indian_rate
+      END
+    ), 0),
+    COUNT(*)
+  INTO v_total_amount, v_meeting_count
+  FROM meetings m
+  WHERE m.client_name = p_client_name
+    AND m.attended = TRUE
+    AND m.screenshot_url IS NOT NULL
+    AND m.screenshot_url != ''
+    AND COALESCE(m.scheduled_date, m.created_at::date) = p_date;
+
+  -- Get active advance payment
+  SELECT id, remaining_amount INTO v_advance_id, v_remaining_advance
+  FROM advance_payments
+  WHERE client_name = p_client_name
+    AND is_active = TRUE
+    AND (settlement_start_date IS NULL OR settlement_start_date <= p_date)
+  ORDER BY created_at DESC
+  LIMIT 1;
+
+  -- Calculate how much advance can be used
+  IF v_advance_id IS NOT NULL AND v_remaining_advance > 0 THEN
+    v_advance_to_use := LEAST(v_total_amount, v_remaining_advance);
+  ELSE
+    v_advance_to_use := 0;
+  END IF;
+
+  -- Insert or update daily dues
+  INSERT INTO daily_dues (
+    client_id,
+    client_name,
+    date,
+    original_amount,
+    advance_adjustment,
+    amount,
+    meeting_count
+  )
+  VALUES (
+    v_client_id,
+    p_client_name,
+    p_date,
+    v_total_amount,
+    v_advance_to_use,
+    v_total_amount - v_advance_to_use,
+    v_meeting_count
+  )
+  ON CONFLICT (client_id, date)
+  DO UPDATE SET
+    original_amount = v_total_amount,
+    advance_adjustment = v_advance_to_use,
+    amount = v_total_amount - v_advance_to_use,
+    meeting_count = v_meeting_count,
+    updated_at = now();
+END;
+$$;`;
+
+    document.getElementById('sqlDisplay').textContent = SQL;
+
+    async function runMigration() {
+      const button = document.getElementById('runButton');
+      const statusDiv = document.getElementById('status');
+
+      button.disabled = true;
+      statusDiv.className = 'status loading';
+      statusDiv.textContent = '⏳ Running migration... Please wait...';
+
+      try {
+        // First check if columns already exist
+        const { data: checkData, error: checkError } = await supabaseClient
+          .rpc('exec_sql', {
+            sql_query: `
+              SELECT column_name
+              FROM information_schema.columns
+              WHERE table_name = 'daily_dues'
+              AND column_name IN ('advance_adjustment', 'original_amount')
+            `
+          });
+
+        // Try to run the migration
+        const { data, error } = await supabaseClient.rpc('exec_sql', {
+          sql_query: SQL
+        });
+
+        if (error) {
+          throw error;
+        }
+
+        statusDiv.className = 'status success';
+        statusDiv.innerHTML = '✅ Migration completed successfully!<br><br>Sub-clients can now add meetings without the adjustment_amount error!';
+        button.textContent = 'Migration Complete ✓';
+
+      } catch (error) {
+        console.error('Migration error:', error);
+        statusDiv.className = 'status error';
+        statusDiv.innerHTML = `❌ Automatic migration failed: ${error.message}<br><br>
+          <strong>Please follow the manual instructions below to run the SQL.</strong><br><br>
+          The SQL code is displayed in the box above. Copy it and run it in the Supabase SQL Editor.`;
+        button.disabled = false;
+        button.textContent = 'Try Again';
+      }
+    }
+  </script>
+</body>
+</html>

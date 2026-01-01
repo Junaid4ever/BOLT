@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fix Cohost Dues Reversal</title>
+  <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 20px;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      min-height: 100vh;
+      color: #fff;
+    }
+    h1 { color: #00d9ff; text-align: center; margin-bottom: 10px; }
+    .subtitle { text-align: center; color: #888; margin-bottom: 30px; }
+    .card {
+      background: rgba(255,255,255,0.1);
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 20px;
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+    .card h3 { color: #00d9ff; margin-top: 0; }
+    button {
+      background: linear-gradient(135deg, #00d9ff, #00b4d8);
+      color: #000;
+      border: none;
+      padding: 15px 30px;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+      width: 100%;
+      margin-top: 10px;
+    }
+    button:hover { opacity: 0.9; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    #log {
+      background: #000;
+      padding: 15px;
+      border-radius: 8px;
+      font-family: monospace;
+      font-size: 13px;
+      max-height: 400px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+    }
+    .success { color: #00ff88; }
+    .error { color: #ff4444; }
+    .info { color: #00d9ff; }
+    .warning { color: #ffaa00; }
+  </style>
+</head>
+<body>
+  <h1>Fix Cohost Dues Reversal</h1>
+  <p class="subtitle">When subclient meeting is deleted, cohost dues will also be reversed</p>
+
+  <div class="card">
+    <h3>Problem</h3>
+    <p>When admin deletes a subclient's meeting (e.g., Junaid's DEMO meeting):</p>
+    <ul>
+      <li>Junaid's dues get reversed correctly (-200rs)</li>
+      <li>BUT Vinod's (cohost) dues do NOT get reversed (-100rs missing)</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h3>Solution</h3>
+    <p>This fix adds database triggers to:</p>
+    <ul>
+      <li>Recalculate cohost dues when subclient meeting is updated</li>
+      <li>Recalculate cohost dues when subclient meeting is deleted</li>
+      <li>Recalculate cohost dues when screenshot is removed</li>
+    </ul>
+    <button onclick="applyFix()" id="applyBtn">Apply Fix Now</button>
+  </div>
+
+  <div class="card">
+    <h3>Log</h3>
+    <div id="log">Click "Apply Fix Now" to start...</div>
+  </div>
+
+  <script>
+    const SUPABASE_URL = 'https://fkypxitgnfqbfplxokve.supabase.co';
+    const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZreXB4aXRnbmZxYmZwbHhva3ZlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA2MjE0ODksImV4cCI6MjA3NjE5NzQ4OX0.Swk4AqJrRBNnEIdSGS3QjfU-okNKN2LGSL43Ha1h4Cc';
+
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    const log = document.getElementById('log');
+
+    function addLog(msg, type = '') {
+      const span = document.createElement('span');
+      span.className = type;
+      span.textContent = msg + '\n';
+      log.appendChild(span);
+      log.scrollTop = log.scrollHeight;
+    }
+
+    async function applyFix() {
+      const btn = document.getElementById('applyBtn');
+      btn.disabled = true;
+      log.innerHTML = '';
+
+      addLog('Starting cohost dues fix migration...', 'info');
+
+      const sql1 = `
+CREATE OR REPLACE FUNCTION calculate_cohost_dues_for_date(
+  p_cohost_id uuid,
+  p_date date
+) RETURNS void AS $$
+DECLARE
+  v_cohost_name text;
+  v_cohost_rate numeric;
+  v_total_amount numeric := 0;
+  v_meeting_count integer := 0;
+  v_subclient_ids uuid[];
+BEGIN
+  SELECT name, COALESCE(cohost_rate, 1)
+  INTO v_cohost_name, v_cohost_rate
+  FROM users
+  WHERE id = p_cohost_id AND is_cohost = true;
+
+  IF v_cohost_name IS NULL THEN
+    RETURN;
+  END IF;
+
+  SELECT ARRAY_AGG(id) INTO v_subclient_ids
+  FROM users
+  WHERE parent_user_id = p_cohost_id;
+
+  IF v_subclient_ids IS NULL OR array_length(v_subclient_ids, 1) IS NULL THEN
+    DELETE FROM daily_dues
+    WHERE client_id = p_cohost_id AND date = p_date;
+    RETURN;
+  END IF;
+
+  SELECT
+    COALESCE(SUM(m.member_count * v_cohost_rate), 0),
+    COALESCE(COUNT(*), 0)
+  INTO v_total_amount, v_meeting_count
+  FROM meetings m
+  WHERE m.client_id = ANY(v_subclient_ids)
+    AND m.scheduled_date = p_date
+    AND m.status = 'active'
+    AND m.attended = true
+    AND m.screenshot_url IS NOT NULL
+    AND m.screenshot_url != '';
+
+  IF v_total_amount > 0 THEN
+    INSERT INTO daily_dues (
+      client_id, client_name, date, amount, original_amount,
+      meeting_count, advance_adjustment, created_at, updated_at
+    ) VALUES (
+      p_cohost_id, v_cohost_name, p_date, v_total_amount, v_total_amount,
+      v_meeting_count, 0, now(), now()
+    )
+    ON CONFLICT (client_id, date)
+    DO UPDATE SET
+      amount = EXCLUDED.amount,
+      original_amount = EXCLUDED.original_amount,
+      meeting_count = EXCLUDED.meeting_count,
+      updated_at = now();
+  ELSE
+    DELETE FROM daily_dues
+    WHERE client_id = p_cohost_id AND date = p_date;
+  END IF;
+END;
+$$ LANGUAGE plpgsql;
+      `;
+
+      const sql2 = `
+CREATE OR REPLACE FUNCTION auto_calculate_dues_on_meeting_update()
+RETURNS TRIGGER AS $$
+DECLARE
+  v_meeting_date date;
+  v_client_parent_id uuid;
+BEGIN
+  v_meeting_date := COALESCE(NEW.scheduled_date, NEW.created_at::date);
+
+  IF NEW.attended = true AND NEW.screenshot_url IS NOT NULL AND NEW.screenshot_url != '' THEN
+    PERFORM calculate_daily_dues_for_client(NEW.client_name, v_meeting_date);
+  END IF;
+
+  SELECT parent_user_id INTO v_client_parent_id
+  FROM users
+  WHERE id = NEW.client_id;
+
+  IF v_client_parent_id IS NOT NULL THEN
+    PERFORM calculate_cohost_dues_for_date(v_client_parent_id, v_meeting_date);
+  END IF;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+      `;
+
+      const sql3 = `
+CREATE OR REPLACE FUNCTION handle_meeting_deletion()
+RETURNS TRIGGER AS $$
+DECLARE
+  v_meeting_date date;
+  v_client_parent_id uuid;
+BEGIN
+  v_meeting_date := COALESCE(OLD.scheduled_date, OLD.created_at::date);
+
+  PERFORM calculate_daily_dues_for_client(OLD.client_name, v_meeting_date);
+
+  SELECT parent_user_id INTO v_client_parent_id
+  FROM users
+  WHERE id = OLD.client_id;
+
+  IF v_client_parent_id IS NOT NULL THEN
+    PERFORM calculate_cohost_dues_for_date(v_client_parent_id, v_meeting_date);
+  END IF;
+
+  RETURN OLD;
+END;
+$$ LANGUAGE plpgsql;
+      `;
+
+      const sql4 = `
+CREATE OR REPLACE FUNCTION handle_screenshot_removal()
+RETURNS TRIGGER AS $$
+DECLARE
+  v_meeting_date date;
+  v_client_parent_id uuid;
+BEGIN
+  IF (OLD.screenshot_url IS NOT NULL AND OLD.screenshot_url != '')
+     AND (NEW.screenshot_url IS NULL OR NEW.screenshot_url = '') THEN
+
+    v_meeting_date := COALESCE(NEW.scheduled_date, NEW.created_at::date);
+
+    PERFORM calculate_daily_dues_for_client(NEW.client_name, v_meeting_date);
+
+    SELECT parent_user_id INTO v_client_parent_id
+    FROM users
+    WHERE id = NEW.client_id;
+
+    IF v_client_parent_id IS NOT NULL THEN
+      PERFORM calculate_cohost_dues_for_date(v_client_parent_id, v_meeting_date);
+    END IF;
+  END IF;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+      `;
+
+      const sqlTriggers = `
+DROP TRIGGER IF EXISTS auto_calc_dues_on_meeting_update ON meetings;
+DROP TRIGGER IF EXISTS handle_meeting_deletion_trigger ON meetings;
+DROP TRIGGER IF EXISTS handle_screenshot_removal_trigger ON meetings;
+
+CREATE TRIGGER auto_calc_dues_on_meeting_update
+AFTER INSERT OR UPDATE OF attended, screenshot_url, scheduled_date, member_count, status
+ON meetings
+FOR EACH ROW
+EXECUTE FUNCTION auto_calculate_dues_on_meeting_update();
+
+CREATE TRIGGER handle_meeting_deletion_trigger
+AFTER DELETE ON meetings
+FOR EACH ROW
+EXECUTE FUNCTION handle_meeting_deletion();
+
+CREATE TRIGGER handle_screenshot_removal_trigger
+AFTER UPDATE OF screenshot_url ON meetings
+FOR EACH ROW
+WHEN (OLD.screenshot_url IS DISTINCT FROM NEW.screenshot_url)
+EXECUTE FUNCTION handle_screenshot_removal();
+      `;
+
+      const sql5 = `
+CREATE OR REPLACE FUNCTION notify_subclient_on_screenshot_upload()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF NEW.screenshot_url IS NOT NULL AND NEW.screenshot_url != ''
+     AND (OLD.screenshot_url IS NULL OR OLD.screenshot_url = '') THEN
+    INSERT INTO notifications (user_id, type, message, is_read, created_at)
+    VALUES (
+      NEW.client_id,
+      'screenshot',
+      'Screenshot uploaded for ' || NEW.meeting_name || ' - Dues updated!',
+      false,
+      now()
+    );
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS notify_subclient_screenshot_trigger ON meetings;
+
+CREATE TRIGGER notify_subclient_screenshot_trigger
+AFTER UPDATE OF screenshot_url ON meetings FOR EACH ROW
+WHEN (OLD.screenshot_url IS DISTINCT FROM NEW.screenshot_url)
+EXECUTE FUNCTION notify_subclient_on_screenshot_upload();
+      `;
+
+      try {
+        addLog('\n1. Creating calculate_cohost_dues_for_date function...', 'info');
+        let { error } = await supabase.rpc('exec_sql', { sql: sql1 });
+        if (error) throw error;
+        addLog('   Done!', 'success');
+
+        addLog('\n2. Creating auto_calculate_dues_on_meeting_update function...', 'info');
+        ({ error } = await supabase.rpc('exec_sql', { sql: sql2 }));
+        if (error) throw error;
+        addLog('   Done!', 'success');
+
+        addLog('\n3. Creating handle_meeting_deletion function...', 'info');
+        ({ error } = await supabase.rpc('exec_sql', { sql: sql3 }));
+        if (error) throw error;
+        addLog('   Done!', 'success');
+
+        addLog('\n4. Creating handle_screenshot_removal function...', 'info');
+        ({ error } = await supabase.rpc('exec_sql', { sql: sql4 }));
+        if (error) throw error;
+        addLog('   Done!', 'success');
+
+        addLog('\n5. Creating triggers...', 'info');
+        ({ error } = await supabase.rpc('exec_sql', { sql: sqlTriggers }));
+        if (error) throw error;
+        addLog('   Done!', 'success');
+
+        addLog('\n6. Creating notification trigger for subclients...', 'info');
+        ({ error } = await supabase.rpc('exec_sql', { sql: sql5 }));
+        if (error) throw error;
+        addLog('   Done!', 'success');
+
+        addLog('\n========================================', 'success');
+        addLog('MIGRATION COMPLETED SUCCESSFULLY!', 'success');
+        addLog('========================================', 'success');
+        addLog('\nNow when a subclient meeting is deleted:', 'info');
+        addLog('- Subclient dues will be recalculated', 'info');
+        addLog('- Cohost dues will ALSO be recalculated', 'info');
+        addLog('\nWhen screenshot is uploaded:', 'info');
+        addLog('- Subclient gets notification instantly', 'info');
+        addLog('- Dues update in real-time on their panel', 'info');
+
+      } catch (err) {
+        addLog('\nError: ' + err.message, 'error');
+        addLog('\nPlease run the SQL manually in Supabase SQL Editor.', 'warning');
+        addLog('\n--- COPY SQL FROM BELOW ---\n', 'warning');
+        addLog(sql1 + sql2 + sql3 + sql4 + sqlTriggers + sql5, '');
+      }
+
+      btn.disabled = false;
+    }
+  </script>
+</body>
+</html>

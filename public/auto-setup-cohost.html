@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Co-Host Auto Setup</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+.container{background:#fff;border-radius:20px;box-shadow:0 20px 60px rgba(0,0,0,0.3);max-width:600px;width:100%;padding:50px;text-align:center}
+h1{color:#667eea;font-size:36px;margin-bottom:20px}
+.status{margin:30px 0;font-size:20px;font-weight:600}
+.loading{color:#718096}
+.success{color:#48bb78}
+.error{color:#e53e3e}
+.spinner{border:4px solid #f3f3f3;border-top:4px solid #667eea;border-radius:50%;width:60px;height:60px;animation:spin 1s linear infinite;margin:20px auto}
+@keyframes spin{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}
+.details{background:#f7fafc;padding:20px;border-radius:10px;margin-top:20px;text-align:left;font-family:'Courier New',monospace;font-size:14px;max-height:400px;overflow-y:auto}
+.btn{background:#667eea;color:#fff;border:none;padding:15px 40px;font-size:18px;border-radius:10px;cursor:pointer;margin-top:20px;font-weight:600;text-decoration:none;display:inline-block;transition:all 0.3s}
+.btn:hover{background:#5a67d8;transform:translateY(-2px);box-shadow:0 10px 20px rgba(102,126,234,0.3)}
+</style>
+</head>
+<body>
+<div class="container">
+<h1>Co-Host Auto Setup</h1>
+<div id="status" class="status loading">
+<div class="spinner"></div>
+Setting up Co-Host system...
+</div>
+<div id="details" class="details" style="display:none"></div>
+<a href="/" class="btn" id="homeBtn" style="display:none">GO TO DASHBOARD</a>
+</div>
+
+<script>
+const supabaseUrl = 'https://fkypxitgnfqbfplxokve.supabase.co';
+const anonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZreXB4aXRnbmZxYmZwbHhva3ZlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA2MjE0ODksImV4cCI6MjA3NjE5NzQ4OX0.Swk4AqJrRBNnEIdSGS3QjfU-okNKN2LGSL43Ha1h4Cc';
+
+async function setupCoHost() {
+  try {
+    const statusEl = document.getElementById('status');
+    const detailsEl = document.getElementById('details');
+    const homeBtnEl = document.getElementById('homeBtn');
+
+    statusEl.innerHTML = '<div class="spinner"></div>Calling Edge Function...';
+
+    const response = await fetch(`${supabaseUrl}/functions/v1/apply-cohost-migration`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${anonKey}`,
+        'Content-Type': 'application/json',
+      }
+    });
+
+    const result = await response.json();
+
+    if (result.success) {
+      statusEl.className = 'status success';
+      statusEl.innerHTML = '✅ Co-Host System Activated!';
+      detailsEl.style.display = 'block';
+      detailsEl.textContent = JSON.stringify(result, null, 2);
+      homeBtnEl.style.display = 'inline-block';
+    } else {
+      statusEl.className = 'status error';
+      statusEl.innerHTML = '⚠️ Setup Incomplete';
+      detailsEl.style.display = 'block';
+      detailsEl.innerHTML = `
+<strong>Error:</strong> ${result.error || 'Unknown error'}
+
+<strong>Manual Setup Required:</strong>
+1. Open: https://supabase.com/dashboard/project/fkypxitgnfqbfplxokve/sql
+2. Paste this SQL:
+
+ALTER TABLE users ADD COLUMN IF NOT EXISTS is_cohost BOOLEAN DEFAULT false;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS parent_user_id uuid;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS cohost_prefix TEXT UNIQUE;
+
+CREATE TABLE IF NOT EXISTS cohost_requests (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES users(id),
+  status TEXT NOT NULL DEFAULT 'pending',
+  requested_at timestamptz DEFAULT now(),
+  admin_response_at timestamptz,
+  admin_response_by TEXT
+);
+
+3. Click RUN
+4. Refresh this page
+      `;
+    }
+  } catch (error) {
+    const statusEl = document.getElementById('status');
+    const detailsEl = document.getElementById('details');
+
+    statusEl.className = 'status error';
+    statusEl.innerHTML = '❌ Connection Error';
+    detailsEl.style.display = 'block';
+    detailsEl.innerHTML = `
+<strong>Error:</strong> ${error.message}
+
+<strong>The easy way:</strong>
+1. Open: https://supabase.com/dashboard/project/fkypxitgnfqbfplxokve/sql
+2. Copy the SQL from the error message above
+3. Click RUN
+4. Done!
+
+This is a one-time setup that takes 10 seconds.
+    `;
+  }
+}
+
+window.addEventListener('load', setupCoHost);
+</script>
+</body>
+</html>

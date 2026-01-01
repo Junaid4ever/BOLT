@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Fix Cohost Dues Reversal</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 800px; margin: 50px auto; padding: 20px; background: #1a1a2e; color: #fff; }
+    .card { background: #16213e; border-radius: 12px; padding: 24px; margin-bottom: 20px; }
+    h1 { color: #00d4ff; }
+    button { background: #00d4ff; color: #000; border: none; padding: 15px 30px; border-radius: 8px; cursor: pointer; font-size: 16px; font-weight: bold; margin: 10px 5px; }
+    button:hover { background: #00a8cc; }
+    button:disabled { background: #666; cursor: not-allowed; }
+    .success { color: #00ff88; }
+    .error { color: #ff4444; }
+    pre { background: #0f0f23; padding: 15px; border-radius: 8px; overflow-x: auto; font-size: 12px; }
+    .status { margin-top: 10px; padding: 10px; border-radius: 8px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Fix Cohost Dues Reversal System</h1>
+    <p>This will create database triggers to:</p>
+    <ul>
+      <li>Reverse cohost dues when admin deletes a meeting with screenshot</li>
+      <li>Add cohost dues when screenshot is uploaded for subclient meeting</li>
+    </ul>
+    <button onclick="runFix()" id="fixBtn">Run Fix Now</button>
+    <div id="status"></div>
+  </div>
+
+  <div class="card">
+    <h2>SQL Being Executed:</h2>
+    <pre id="sqlPreview"></pre>
+  </div>
+
+  <script>
+    const SUPABASE_URL = 'https://fkypxitgnfqbfplxokve.supabase.co';
+    const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZreXB4aXRnbmZxYmZwbHhva3ZlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA2MjE0ODksImV4cCI6MjA3NjE5NzQ4OX0.Swk4AqJrRBNnEIdSGS3QjfU-okNKN2LGSL43Ha1h4Cc';
+
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    const sql = `
+-- Function to reverse cohost dues when meeting with screenshot is deleted
+CREATE OR REPLACE FUNCTION reverse_cohost_dues_on_meeting_delete()
+RETURNS TRIGGER AS $$
+DECLARE
+  v_cohost_id UUID;
+  v_cohost_name TEXT;
+  v_cohost_rate NUMERIC;
+  v_member_count INTEGER;
+  v_meeting_date DATE;
+  v_adjustment_amount NUMERIC;
+BEGIN
+  IF OLD.screenshot_url IS NULL OR OLD.screenshot_url = '' THEN
+    RETURN OLD;
+  END IF;
+
+  v_member_count := COALESCE(OLD.member_count, 0);
+  IF v_member_count = 0 THEN
+    RETURN OLD;
+  END IF;
+
+  v_meeting_date := COALESCE(OLD.scheduled_date, OLD.created_at::DATE);
+
+  SELECT u.parent_user_id, p.name, COALESCE(p.cohost_rate, p.price_per_member, 1)
+  INTO v_cohost_id, v_cohost_name, v_cohost_rate
+  FROM users u
+  LEFT JOIN users p ON u.parent_user_id = p.id
+  WHERE u.id = OLD.client_id
+    AND u.parent_user_id IS NOT NULL;
+
+  IF v_cohost_id IS NOT NULL THEN
+    v_adjustment_amount := v_member_count * v_cohost_rate * -1;
+
+    INSERT INTO due_adjustments (client_id, client_name, amount, reason, date)
+    VALUES (
+      v_cohost_id,
+      v_cohost_name,
+      v_adjustment_amount,
+      'Meeting deleted by admin: ' || COALESCE(OLD.meeting_name, 'Unknown') || ' (' || v_member_count || ' members)',
+      v_meeting_date
+    );
+  END IF;
+
+  RETURN OLD;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trigger_reverse_cohost_dues_on_delete ON meetings;
+
+CREATE TRIGGER trigger_reverse_cohost_dues_on_delete
+  BEFORE DELETE ON meetings
+  FOR EACH ROW
+  EXECUTE FUNCTION reverse_cohost_dues_on_meeting_delete();
+`;
+
+    document.getElementById('sqlPreview').textContent = sql;
+
+    async function runFix() {
+      const btn = document.getElementById('fixBtn');
+      const status = document.getElementById('status');
+
+      btn.disabled = true;
+      btn.textContent = 'Running...';
+      status.innerHTML = '<div class="status" style="background:#333">Running SQL...</div>';
+
+      try {
+        const { data, error } = await supabase.rpc('exec_sql', { sql_query: sql });
+
+        if (error) {
+          if (error.message.includes('function exec_sql')) {
+            status.innerHTML = '<div class="status error" style="background:#330000">Error: exec_sql function not available. Please run this SQL manually in Supabase Dashboard SQL Editor.</div>';
+          } else {
+            throw error;
+          }
+        } else {
+          status.innerHTML = '<div class="status success" style="background:#003300">SUCCESS! Cohost dues reversal triggers created.</div>';
+        }
+      } catch (err) {
+        status.innerHTML = '<div class="status error" style="background:#330000">Error: ' + err.message + '<br><br>Please run the SQL above manually in Supabase Dashboard -> SQL Editor</div>';
+      }
+
+      btn.disabled = false;
+      btn.textContent = 'Run Fix Now';
+    }
+  </script>
+</body>
+</html>
